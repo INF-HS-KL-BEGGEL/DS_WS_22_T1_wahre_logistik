@@ -1,0 +1,134 @@
+---
+title: "R mit Postgres verbinden"
+output: html_notebook
+---
+
+
+Es gibt zwei Möglichkeiten (Packages) sich aus R heraus mit einer Postgres-Datenbank zu verbinden (siehe https://solutions.rstudio.com/db/databases/postgresql/):
+
+- odbc
+- RPostgres
+
+
+# Variante 1: odbc
+## Voraussetzungen
+Für die Variante mit dem Package *odbc* muss man für die entsprechende Datenbank (in unserem Fall Postgres) einen odbc-Treiber installieren.
+
+## Umgang/Verwendung
+
+```{r message=FALSE, warning=FALSE}
+library(DBI)
+library(odbc)
+library(dplyr)
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+```{r}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = "PostgreSQL Unicode",
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+```{r}
+dbListTables(conn = con)
+```
+```{r}
+dbDisconnect(con)
+```
+
+# Variante 2: RPostgres
+
+```{r message=FALSE, warning=FALSE}
+library(DBI)
+library(dplyr)
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+```{r}
+con <- dbConnect(drv=RPostgres::Postgres(),
+                 dbname=Sys.getenv("dbname"),
+                 host=Sys.getenv("host"),
+                 port=Sys.getenv("port"),
+                 password=Sys.getenv("password"),
+                 user=Sys.getenv("user"))
+```
+
+```{r}
+dbListTables(conn = con)
+```
+
+```{r}
+dbDisconnect(con)
+```
+
+
+# Welche Unterschiede bestehen zwischen den beiden Varianten?
+Nach bisherigem Erkenntnisstand gibt es folgende Unterschiede:
+
+- Bei RPostgres muss man **keinen** odbc-Treiber installieren. --> Das Setup ist also einfacher.
+- Bei RPostgres gibt es noch ein "Problem" mit Query-Parametern (siehe https://github.com/r-dbi/RPostgres/issues/201). Hierbei geht es aber nur um Convenience.
+- Bei der Verwendung von RPostgres zeigt RStudio die Datenbankverbindung leider **nicht** im Connections-Tab an.
+
+
+# Beispiele zum Umgang mit Postgres Datenbanken
+
+## Benötigte Libraries laden
+```{r message=FALSE, warning=FALSE}
+library(DBI)
+library(dplyr)
+```
+
+## Umgebungsvariablen setzen/laden
+```{r}
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+## Verbindung mit Postgres aufbauen
+```{r}
+con <- dbConnect(drv=RPostgres::Postgres(),
+                 dbname=Sys.getenv("dbname"),
+                 host=Sys.getenv("host"),
+                 port=Sys.getenv("port"),
+                 password=Sys.getenv("password"),
+                 user=Sys.getenv("user"))
+```
+
+## Tabellen auflisten
+```{r}
+dbListTables(conn = con)
+```
+## Spalten einer Tabelle auflisten
+```{r}
+dbListFields(conn=con, name="kundenstammdaten")
+```
+
+## Datensätze aus einer Tabelle abfragen
+
+### alle
+```{r}
+dbGetQuery(conn=con, statement = "select * from kundenstammdaten")
+```
+
+### mit Bedingung (Todo: funktioniert noch nicht!)
+```{r}
+dbGetQuery(conn=con, statement = "select * from kundenstammdaten where kndnr='Han-16427'")
+```
+
+### nur n Zeilen
+```{r}
+dbGetQuery(conn=con, statement = "select * from kundenstammdaten", n=2)
+```
+
+
+### mit Auswahl spezifischer Spalten
+Todo
+
+
+### Verbindung beenden
+```{r}
+dbDisconnect(con)
+```
