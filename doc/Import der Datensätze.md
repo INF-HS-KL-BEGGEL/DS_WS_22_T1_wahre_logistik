@@ -72,3 +72,17 @@ Aus Performance Gründen wurde kein simples Brute-Force angewandt, das dies zu 5
 4. Die Spalte "Abgang" in der Tabelle "Verkaeufe" beinhaltet nicht auschließlich ganzzahlige Werte, sondern auch Fließkommazahlen.
 
 5. Die Spalte "Materialnummer" in der Tabelle "Verkaeufe" beinhaltet nicht auschließlich nunmerische Werte, sondern auch vereinzelt Characters.
+
+## Anpassen der Daten für weitere Bearbeitung in R
+
+### Erstellen einer neuen Spalte für numerische Preise in Verkauefe
+
+```sql
+ALTER TABLE IF EXISTS public.verkaeufe ADD COLUMN vk_preis_num numeric;
+```
+
+### Kopieren der *String* Preis Spalte (vk_preis) in die *Numeric* Preis Spalte (vk_preis_num)
+Alle Punktzeichen außer das Letzte, Leerzeichen und Eurozeichen werden vor dem Cast in einen numerischen Wert entfernt und dann in die neue Spalte eingetragen.
+```sql
+UPDATE public.verkaeufe SET vk_preis_num = REGEXP_REPLACE(vk_preis, '(\.(?=[^.]*\.)|\s|€)', '', 'g')::DECIMAL;
+```
