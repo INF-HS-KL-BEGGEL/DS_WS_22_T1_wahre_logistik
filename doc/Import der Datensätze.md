@@ -76,7 +76,6 @@ Aus Performance Gründen wurde kein simples Brute-Force angewandt, das dies zu 5
 ## Anpassen der Daten für weitere Bearbeitung in R
 
 ### Erstellen einer neuen Spalte für numerische Preise in Verkauefe
-
 ```sql
 ALTER TABLE IF EXISTS public.verkaeufe ADD COLUMN vk_preis_num numeric;
 ```
@@ -85,4 +84,14 @@ ALTER TABLE IF EXISTS public.verkaeufe ADD COLUMN vk_preis_num numeric;
 Alle Punktzeichen außer das Letzte, Leerzeichen und Eurozeichen werden vor dem Cast in einen numerischen Wert entfernt und dann in die neue Spalte eingetragen.
 ```sql
 UPDATE public.verkaeufe SET vk_preis_num = REGEXP_REPLACE(vk_preis, '(\.(?=[^.]*\.)|\s|€)', '', 'g')::DECIMAL;
+```
+
+### Erstellen einer neuen Spalte für numerische Kundennummern wie in der Tabelle Verkaeufe
+```sql
+ALTER TABLE IF EXISTS public.kundenstammdaten ADD COLUMN kndnr_tagless numeric;
+```
+
+### Kopieren der kndnr in kndnr_tagless ohne Stadt-Tag 
+```sql
+UPDATE public.kundenstammdaten SET kndnr_tagless = REGEXP_REPLACE(kndnr, '[^0-9]+', '', 'g')::decimal;
 ```
