@@ -3,8 +3,8 @@
 
 
 
-## Der Datensatz selbst
-... ist verfügbar unter [Google Drive](https://drive.google.com/file/d/1QXE9-UqFT1xJcDpKl78k5qg7dnN_ThyK/view?usp=sharing).
+## Datensatz
+Der Datensatz selbst ist verfügbar unter [Google Drive](https://drive.google.com/file/d/1QXE9-UqFT1xJcDpKl78k5qg7dnN_ThyK/view?usp=sharing).
 Link zur zugehörigen [Vorlesung](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)
 
 Der original Datensatz umfasst 7 Tabellen {Q1, Q2, Q3, Q4, ABC-Zugriffe, Materialstämme, Kunden Stammdaten}.
