@@ -7,8 +7,8 @@ output: html_notebook
 
 ```{r message=FALSE, warning=FALSE}
 library(DBI)
-library(odbc)
 library(dplyr)
+library(odbc)
 library(lubridate)
 library(tidyverse)
 library(leaflet)
@@ -16,8 +16,27 @@ readRenviron("../env_files/Renviron.postgres")
 ```
 
 ```{r}
+print(Sys.getenv("driver"))
+print(Sys.getenv("host"))
+print(Sys.getenv("dbname"))
+print(Sys.getenv("user"))
+print(Sys.getenv("password"))
+print(Sys.getenv("port"))
+
+```
+
+```{r}
+con <- dbConnect(drv=RPostgres::Postgres(),
+                 dbname=Sys.getenv("dbname"),
+                 host=Sys.getenv("host"),
+                 port=Sys.getenv("port"),
+                 password=Sys.getenv("password"),
+                 user=Sys.getenv("user"))
+```
+
+```{r}
 con <- DBI::dbConnect(odbc::odbc(),
-                      Driver   = "PostgreSQL Unicode",
+                      Driver   = Sys.getenv("driver"),#"PostgreSQL Unicode",
                       Server   = Sys.getenv("host"),
                       Database = Sys.getenv("dbname"),
                       UID      = Sys.getenv("user"),
@@ -32,34 +51,20 @@ con <- DBI::dbConnect(odbc::odbc(),
 ### Wie viele Artikel
 
 ```{r}
-ms <- dbGetQuery(conn=con, statement = "select * from materialstaemme")
-sprintf("Anzahl Artikel: %d", nrow(ms))
-```
-```{sql connection=con}
-SELECT COUNT(*) AS anzahl_artikel FROM public.materialstaemme;
+query_anzahlArtikel <- dbGetQuery(conn=con, statement = "select count(artikel) as anzahlArtikel from materialstaemme")
+print(query_anzahlArtikel)
 ```
 
 ### Wie oft Verkauft
 
 ```{r warning=FALSE}
-vk <- dbGetQuery(conn=con, statement = "select materialnummer, abgang, vk_preis_num from verkaeufe")
-gvk <- vk %>% group_by(materialnummer) %>% summarise(vk_preis_num_gesamt=sum(vk_preis_num), abgang_gesamt = sum(abgang), datensaetze= n()) %>% arrange(desc(vk_preis_num_gesamt), desc(abgang_gesamt), desc(datensaetze))
-gvk
-```
-
-
-```{sql connection=con}
-SELECT materialnummer, SUM(vk_preis_num) as vk_preis_num_gesamt, SUM(abgang) as abgang_gesamt, COUNT(materialnummer) as datensaetze FROM public.verkaeufe GROUP BY materialnummer ORDER BY vk_preis_num_gesamt desc, abgang_gesamt desc, datensaetze desc;
+query_verkäufeGesamt <- dbGetQuery(conn=con, statement = "select materialnummer, sum(abgang) as abgangGesamt, sum(vk_preis_num) as EinnahmenGesamt, count(*) as Einträge from verkaeufe Group By materialnummer")
+print(query_verkäufeGesamt)
 ```
 
 ### 10 Top-Selling Artikel
 ```{r}
-gvk %>% head(10)
-```
-
-
-```{sql connection=con}
-SELECT materialnummer, SUM(vk_preis_num) as vk_preis_num_gesamt, SUM(abgang) as abgang_gesamt, COUNT(materialnummer) as datensaetze FROM public.verkaeufe GROUP BY materialnummer ORDER BY vk_preis_num_gesamt desc, abgang_gesamt desc, datensaetze desc LIMIT(10);
+query_verkäufeGesamt %>% arrange(desc(einnahmengesamt)) %>%head(10)
 ```
 
 ## Kunden
@@ -67,26 +72,16 @@ SELECT materialnummer, SUM(vk_preis_num) as vk_preis_num_gesamt, SUM(abgang) as 
 ### Wie viele Kunden
 
 ```{r}
-ks <- dbGetQuery(conn=con, statement = "select * from kundenstammdaten")
-sprintf("Anzahl Kunden: %d", nrow(ks))
-```
-
-```{sql connection=con}
-SELECT COUNT(*) AS anzahl_kunden FROM kundenstammdaten;
+query_kundenGesamt <- dbGetQuery(conn=con, statement = "select count(kndnr) from kundenstammdaten")
+print(query_kundenGesamt)
 ```
 
 ### Wie viel kaufen die Kunden
 
 ```{r}
-kvk <- dbGetQuery(conn=con, statement = "select kunde, abgang, vk_preis_num from verkaeufe")
+query_KundenKaufLeistung <- dbGetQuery(conn=con, statement = "select kunde, sum(abgang) as GesamtAbgang, sum(vk_preis_num) as GesamtAusgaben, count(*) as Einträge from verkaeufe Group By kunde")
 
-gkvk <- kvk %>% group_by(kunde) %>% summarise(vk_preis_num_gesamt=sum(vk_preis_num), abgang_gesamt = sum(abgang), datensaetze= n()) %>% arrange(desc(vk_preis_num_gesamt), desc(abgang_gesamt), desc(datensaetze))
-
-gkvk
-```
-
-```{sql connection=con}
-SELECT kunde, SUM(vk_preis_num) as vk_preis_num_gesamt, SUM(abgang) as abgang_gesamt, COUNT(materialnummer) as datensaetze FROM public.verkaeufe GROUP BY kunde ORDER BY vk_preis_num_gesamt desc, abgang_gesamt desc, datensaetze desc;
+print(query_KundenKaufLeistung)
 ```
 
 ### Geo-Vis von Kunden
@@ -105,46 +100,37 @@ map
 ## Wie groß sind die Lieferscheine
 
 ```{r}
-ls <- dbGetQuery(conn=con, statement = "select lieferschein, abgang, vk_preis_num from verkaeufe")
+query_LieferscheinGröße <- dbGetQuery(conn=con, statement = "select lieferschein, sum(abgang) as GesamtAbgang, sum(vk_preis_num) as GesamtEinnahmen, count(*) as Einträge from verkaeufe Group By lieferschein order by Einträge DESC")
 
-gls <- ls %>% group_by(lieferschein) %>% summarise(vk_preis_num_gesamt=sum(vk_preis_num), abgang_gesamt = sum(abgang), datensaetze= n()) %>% arrange(desc(vk_preis_num_gesamt), desc(abgang_gesamt), desc(datensaetze))
-
-gls
+print(query_LieferscheinGröße)
 ```
 
 ## Preise, Volumen und Gewicht
 
 ```{r}
-vkjms <- dbGetQuery(conn=con, statement = "SELECT * FROM verkaeufe JOIN materialstaemme ON artikel = materialnummer")
+query_LieferscheinÜberblick <- dbGetQuery(conn=con, statement = "select verkaeufe.lieferschein, sum(verkaeufe.vk_preis_num) as GesamtEinnahmen, sum(verkaeufe.abgang*materialstaemme.ve_pro_dm3) as GesamtVolumen, sum(verkaeufe.abgang*materialstaemme.ve_pro_kg) as GesamtGewicht from verkaeufe Inner Join materialstaemme ON verkaeufe.materialnummer=materialstaemme.artikel Group By verkaeufe.lieferschein")
 
-gvkjms <- vkjms %>% group_by(lieferschein) %>% summarise(vk_preis_num_gesamt=sum(vk_preis_num), volumen_gesamt = sum(abgang*ve_pro_dm3), gewicht_gesamt=sum(abgang*ve_pro_kg), einzelteile_gesamt=sum(abgang*ve)) %>% arrange(desc(vk_preis_num_gesamt), desc(volumen_gesamt), desc(gewicht_gesamt), desc(einzelteile_gesamt))
-
-gvkjms
+print(query_LieferscheinÜberblick)
 ```
 
 # Zeit
 
-## Lieferungen nach KW
-```{r}
-vk <- dbGetQuery(conn=con, statement = "select datum, vk_preis_num from verkaeufe")
-
-gvk <- vk %>% mutate(kw = cut.Date(datum, breaks = "1 week", labels = FALSE)) %>% group_by(kw) %>% summarize(vk_preis_gesamt = sum(vk_preis_num))
-
-gvk
-
-ggplot(gvk, aes(x=kw, y=vk_preis_gesamt/1000)) + geom_col() + geom_text(aes(label = kw), vjust = -0.5, size=2)
-```
-
-## Lieferungen nach Monaten & Trends/Saisonale Effekte
+## Lieferungen nach KW und Monaten
 
 ```{r}
-vk <- dbGetQuery(conn=con, statement = "select datum, vk_preis_num from verkaeufe")
+#KW
+query_LieferungNachKW <- dbGetQuery(conn=con, statement = "SELECT DATE_PART('week',datum) as KW, Count(*) as VerkäufeProKW, sum(vk_preis_num) as GesamtEinnahmen From verkaeufe Group By KW")
 
-gvk <- vk %>% group_by(month = lubridate::floor_date(datum, "month")) %>% summarize(vk_preis_num_gesamt=sum(vk_preis_num))
+query_LieferungNachKW
 
-gvk
+ggplot(query_LieferungNachKW, aes(x=kw, y=gesamteinnahmen/(sum(gesamteinnahmen)/100))) + geom_col() + geom_text(aes(label = kw), vjust = -0.5, size=2)
 
-ggplot(gvk, aes(x=month, y=vk_preis_num_gesamt/1000)) + geom_col() + geom_text(aes(label = month), vjust = -0.5, size=2)
+#Months
+query_LieferungNachKW <- dbGetQuery(conn=con, statement = "SELECT DATE_PART('month',datum) as month, Count(*) as VerkäufeProKW, sum(vk_preis_num) as GesamtEinnahmen From verkaeufe Group By month")
+
+query_LieferungNachKW
+
+ggplot(query_LieferungNachKW, aes(x=month, y=gesamteinnahmen/(sum(gesamteinnahmen)/100))) + geom_col() + geom_text(aes(label = month), vjust = -0.5, size=2)
 ```
 
 # Datenbankverbindung beenden
