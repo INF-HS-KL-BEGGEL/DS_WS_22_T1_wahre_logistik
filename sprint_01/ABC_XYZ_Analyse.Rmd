@@ -252,20 +252,176 @@ abc_analyse_nach_abgang %>%
 
 
 # XYZ-Analyse
-Todo
+##Formeln:
+Erwartungswert=Mittelwert von Abgang
+Varianz = Summe von ((Abgang(Artikel) - Erwartungswert(Artikel)) zum Quadrat) /  Größe der Menge
+[https://axel-schroeder.de/varianz-standardabweichung-und-co-statistische-grundlagen-fuer-kleine-unternehmen/]
+
+Variationskoeffizient = Wurzel von (Varianz(Artikel)) / Erwartungswert(Artikel)
+[https://axel-schroeder.de/xyz-analyse-optimale-materialwirtschaft-schritt-fuer-schritt-fallstricke-beispieldateien/]
+
+
+### Erwartungswert
+
+```{r}
+#AbgangMittelwert
+query_AbgangMittelwert <- dbGetQuery(conn=con, statement = "SELECT materialnummer, sum(abgang)/count(abgang) as Erwartungswert From verkaeufe Group By materialnummer")
+query_AbgangMittelwert
+```
+### Varianz
+
+```{r}
+#AbgangVarianz
+query_AbgangVarianz <- dbGetQuery(conn=con, statement = "SELECT materialnummer, abgang From verkaeufe Order By materialnummer")
+#füge die Menge von 'abgang' hinzu
+query_AbgangVarianz <- inner_join(x=query_AbgangVarianz,y=query_AbgangMittelwert,by="materialnummer")
+#Rechenzwischenschritt für die Varianz
+query_AbgangVarianz <- mutate(query_AbgangVarianz, abgang_minus_erwartungswert_zum_quadrat = ((abgang-erwartungswert)**2))
+#Finale Berechnung der Varianz
+query_AbgangVarianz <- query_AbgangVarianz %>% group_by(materialnummer, erwartungswert) %>% summarize(  varianz=sum(abgang_minus_erwartungswert_zum_quadrat)/n())
+
+query_AbgangVarianz
+```
+
+### Variationskoeffizient
+
+```{r}
+#AbgangVarianzkoeffizient
+query_Variationskoeffizient <- mutate(query_AbgangVarianz, Variationskoeffizient = (sqrt(varianz)/erwartungswert)*100)
+query_Variationskoeffizient
+```
+```{r}
+#create subset where variation > 0
+subset_Variationskoeffizient <- subset(query_Variationskoeffizient,varianz>0) 
+subset_Variationskoeffizient
+```
+
+### Artikelanteil und XYZ Klassifizierung
+```{r}
+#sortieren
+query_Variationskoeffizient <- query_Variationskoeffizient %>% arrange(Variationskoeffizient) 
+#ergänzen der eihen nummer
+query_Variationskoeffizient <- query_Variationskoeffizient %>% ungroup(materialnummer,erwartungswert)%>% mutate(anteil_artikel=row_number()/n())
+query_Variationskoeffizient
+```
+
+
+```{r}
+#get max and min values of Variationskoeffizient
+maximum <- max(query_Variationskoeffizient$Variationskoeffizient)
+maximum
+minimum <- min(query_Variationskoeffizient$Variationskoeffizient)
+minimum
+prozentualTeil <-maximum/100
+
+# X, Y, Z werden nach Lust und Laune gwählt, da gibt es keine Richtlinie
+query_Variationskoeffizient <- query_Variationskoeffizient %>% mutate(klasse= 
+                                                                        case_when(
+                                                                          Variationskoeffizient/prozentualTeil<=20 ~ "X",
+                                                                          Variationskoeffizient/prozentualTeil<=50 & Variationskoeffizient/prozentualTeil>20 ~ "Y",
+                                                                          TRUE ~ "Z"
+                                                                        ))#Variationskoeffizient/prozentualTeil
+query_Variationskoeffizient
+```
+
+### Plot
+
+```{r}
+#plot all xyz Values
+x_B <- query_Variationskoeffizient %>% 
+  filter(klasse == "X") %>% 
+  arrange(Variationskoeffizient) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
+
+x_C <- query_Variationskoeffizient %>% 
+  filter(klasse == "Y") %>% 
+  arrange(Variationskoeffizient) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
 
 
 
-# ABC-XYZ-Analyse
-Todo
+query_Variationskoeffizient %>% 
+  ggplot() +
+  geom_line(mapping = aes(x=anteil_artikel*100, y=Variationskoeffizient, color=klasse)) +
+  #geom_line(mapping = aes(x=anteil_artikel*100, y=Variationskoeffizient)) +
+  geom_hline(yintercept = 0, size=0.8) + 
+  geom_vline(xintercept = 0, size=0.8) +
+  #geom_vline(xintercept = c(x_B, x_C)*100, linetype="dashed") +
+  scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits = 0)) +
+  scale_y_continuous(breaks = seq(from=0, to=800, by=50)) +
+  coord_fixed(ratio = 0.1) +
+  labs(
+    x = "Anteil Artikel (in %)", 
+    y = "Variationskoeffizient",
+    color = "Klasse",
+    title = "XYZ-Analyse nach Abgängen"
+  )
+```
+### Anpassungen für das Subset
+```{r}
+#sortieren
+subset_Variationskoeffizient <- subset_Variationskoeffizient %>% arrange(Variationskoeffizient) 
+#ergänzen der eihen nummer
+subset_Variationskoeffizient <- subset_Variationskoeffizient %>% ungroup(materialnummer,erwartungswert)%>% mutate(anteil_artikel=row_number()/n())
+subset_Variationskoeffizient
+
+#get max and min values of Variationskoeffizient
+maximum <- max(subset_Variationskoeffizient$Variationskoeffizient)
+maximum
+minimum <- min(subset_Variationskoeffizient$Variationskoeffizient)
+minimum
+prozentualTeil <-maximum/100
+
+# X, Y, Z werden nach Lust und Laune gwählt, da gibt es keine Richtlinie
+subset_Variationskoeffizient <- subset_Variationskoeffizient %>% mutate(klasse= 
+                                                                        case_when(
+                                                                          Variationskoeffizient/prozentualTeil<=20 ~ "X",
+                                                                          Variationskoeffizient/prozentualTeil<=50 & Variationskoeffizient/prozentualTeil>20 ~ "Y",
+                                                                          TRUE ~ "Z"
+                                                                        ))#Variationskoeffizient/prozentualTeil
+subset_Variationskoeffizient
+```
+
+
+```{r}
+#plot values only with variation above 0
+x_B <- subset_Variationskoeffizient %>% 
+  filter(klasse == "X") %>% 
+  #arrange(subset_Variationskoeffizient) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
+
+x_C <- subset_Variationskoeffizient %>% 
+  filter(klasse == "Y") %>% 
+  #arrange(subset_Variationskoeffizient) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
 
 
 
-
+subset_Variationskoeffizient %>% 
+  ggplot() +
+  geom_line(mapping = aes(x=anteil_artikel*100, y=Variationskoeffizient, color=klasse)) +
+  #geom_line(mapping = aes(x=anteil_artikel*100, y=Variationskoeffizient)) +
+  geom_hline(yintercept = 0, size=0.8) + 
+  geom_vline(xintercept = 0, size=0.8) +
+  #geom_vline(xintercept = c(x_B, x_C)*100, linetype="dashed") +
+  scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits = 0)) +
+  scale_y_continuous(breaks = seq(from=0, to=800, by=50)) +
+  coord_fixed(ratio = 0.1) +
+  labs(
+    x = "Anteil Artikel (in %)", 
+    y = "Variationskoeffizient",
+    color = "Klasse",
+    title = "XYZ-Analyse nach Abgängen"
+  )
+```
 
 ```{r include=FALSE}
 DBI::dbDisconnect(con)
 ```
 
-
-
+# ABC-XYZ-Analyse
+Todo
