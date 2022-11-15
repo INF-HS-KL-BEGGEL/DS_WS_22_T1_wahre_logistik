@@ -6,6 +6,7 @@ output:
     toc: true
     toc_float: true
     code_folding: none
+    number_sections: true
 ---
 
 ```{r include=FALSE}
@@ -103,18 +104,44 @@ abc_analyse_nach_zugriffen %>%
 ```
 
 
+
 ```{r}
-abc_analyse_nach_zugriffen %>% 
+abc_analyse_nach_zugriffen <- abc_analyse_nach_zugriffen %>% 
   rename(anteil_zugriffe = anteil, anteil_zugriffe_kumuliert = anteil_kumuliert) %>% 
   # arrange(desc(anteil_zugriffe)) %>% 
-  mutate(anteil_artikel = row_number()/n()) %>% 
-  ggplot() +
-  geom_line(mapping = aes(x=anteil_artikel, y=anteil_zugriffe_kumuliert, color=klasse)) +
-  scale_x_continuous(breaks = seq(from=0, to=1, by=0.2)) +
-  scale_y_continuous(breaks = seq(from=0, to=1, by=0.2)) +
-  coord_fixed(ratio = 1)
+  mutate(anteil_artikel = row_number()/n())
 ```
 
+```{r}
+x_B <- abc_analyse_nach_zugriffen %>% 
+  filter(klasse == "B") %>% 
+  arrange(rang) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
+
+x_C <- abc_analyse_nach_zugriffen %>% 
+  filter(klasse == "C") %>% 
+  arrange(rang) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
+
+
+ abc_analyse_nach_zugriffen %>% 
+  ggplot() +
+  geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_zugriffe_kumuliert*100, color=klasse)) +
+  geom_hline(yintercept = 0, size=0.8) + 
+  geom_vline(xintercept = 0, size=0.8) +
+  geom_vline(xintercept = c(x_B, x_C)*100, linetype="dashed") +
+  scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits=1)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  coord_fixed(ratio = 1) +
+  labs(
+    x = "Anteil Artikel (in %)", 
+    y = "Anteil Zugriffe kumuliert (in %)",
+    color = "Klasse",
+    title = "ABC-Analyse nach Zugriffen"
+  )
+```
 
 ```{r}
 abc_analyse_nach_zugriffen %>% nrow()
@@ -159,15 +186,46 @@ abc_analyse_nach_umsatz %>%
 
 
 ```{r}
-abc_analyse_nach_umsatz %>% 
+abc_analyse_nach_umsatz <- abc_analyse_nach_umsatz %>% 
   rename(anteil_umsatz = anteil, anteil_umsatz_kumuliert = anteil_kumuliert) %>% 
-  mutate(anteil_artikel = row_number()/n()) %>%
-  ggplot() +
-  geom_line(mapping = aes(x=anteil_artikel, y=anteil_umsatz_kumuliert, color=klasse)) +
-  scale_x_continuous(breaks = seq(from=0, to=1, by=0.2)) +
-  scale_y_continuous(breaks = seq(from=0, to=1, by=0.2)) +
-  coord_fixed(ratio = 1)
+  mutate(anteil_artikel = row_number()/n())
+  
+
 ```
+
+```{r}
+x_B <- abc_analyse_nach_umsatz %>% 
+  filter(klasse == "B") %>% 
+  arrange(rang) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
+
+x_C <- abc_analyse_nach_umsatz %>% 
+  filter(klasse == "C") %>% 
+  arrange(rang) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
+   
+abc_analyse_nach_umsatz %>% 
+  ggplot() +
+  geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_umsatz_kumuliert*100, color=klasse)) +
+  geom_hline(yintercept = 0, size=0.8) + 
+  geom_vline(xintercept = 0, size=0.8) +
+  geom_vline(xintercept = c(x_B, x_C)*100, linetype="dashed") +
+  # geom_area(aes(y=anteil_umsatz_kumuliert)) +
+  scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits = 1)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  # scale_fill_brewer(palette="Dark2") +
+  coord_fixed(ratio = 1) +
+  labs(
+    x = "Anteil Artikel (in %)", 
+    y = "Anteil Umsatz kumuliert (in %)",
+    color = "Klasse",
+    title = "ABC-Analyse nach Umsatz"
+  )
+```
+
+
 
 ## Nach Summe von Abgang
 
@@ -177,6 +235,7 @@ abc_analyse_nach_abgang <- verkaeufe %>%
   group_by(materialnummer) %>% 
   summarise(count_abgang=sum(abgang)) %>% 
   arrange(desc(count_abgang)) %>% 
+  mutate(rang=row_number()) %>% 
   mutate(anteil_abgang=count_abgang/sum(count_abgang)) %>%
   mutate(anteil_abgang_kumuliert=cumsum(anteil_abgang)) %>% 
   mutate(klasse=
@@ -186,8 +245,7 @@ abc_analyse_nach_abgang <- verkaeufe %>%
              TRUE ~ "C"
              )
          ) %>% 
-  mutate(klasse = as.factor(klasse)) %>% 
-  select(materialnummer, anteil_abgang_kumuliert, klasse, count_abgang)
+  mutate(klasse = as.factor(klasse)) 
 ```
 
 ```{r}
@@ -195,15 +253,41 @@ abc_analyse_nach_abgang %>%
   head(10)
 ```
 
-Nun stellen wir noch die Anzahl der Artikel dem kumulierten Anteil der Abgänge grafisch gegenüber.
 ```{r}
+abc_analyse_nach_abgang <- abc_analyse_nach_abgang %>% 
+  mutate(anteil_artikel=row_number()/n())
+```
+
+```{r}
+x_B <- abc_analyse_nach_abgang %>% 
+  filter(klasse == "B") %>% 
+  arrange(rang) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
+
+x_C <- abc_analyse_nach_abgang %>% 
+  filter(klasse == "C") %>% 
+  arrange(rang) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
+
+
+
 abc_analyse_nach_abgang %>% 
-  mutate(anteil_artikel=row_number()/n()) %>% 
   ggplot() +
-  geom_line(mapping = aes(x=anteil_artikel, y=anteil_abgang_kumuliert, color=klasse)) +
-  scale_x_continuous(breaks = seq(from=0, to=1, by=0.2)) +
-  scale_y_continuous(breaks = seq(from=0, to=1, by=0.2)) +
-  coord_fixed(ratio = 1)
+  geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_abgang_kumuliert*100, color=klasse)) +
+  geom_hline(yintercept = 0, size=0.8) + 
+  geom_vline(xintercept = 0, size=0.8) +
+  geom_vline(xintercept = c(x_B, x_C)*100, linetype="dashed") +
+  scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits = 0)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  coord_fixed(ratio = 0.5) +
+  labs(
+    x = "Anteil Artikel (in %)", 
+    y = "Anteil Abgänge kumuliert (in %)",
+    color = "Klasse",
+    title = "ABC-Analyse nach Abgängen"
+  )
 ```
 
 
