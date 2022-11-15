@@ -12,18 +12,9 @@ library(odbc)
 library(lubridate)
 library(tidyverse)
 library(leaflet)
-readRenviron("../env_files/Renviron.postgres")
+readRenviron("../env_files/.Renviron.postgres")
 ```
 
-```{r}
-print(Sys.getenv("driver"))
-print(Sys.getenv("host"))
-print(Sys.getenv("dbname"))
-print(Sys.getenv("user"))
-print(Sys.getenv("password"))
-print(Sys.getenv("port"))
-
-```
 
 ```{r}
 con <- dbConnect(drv=RPostgres::Postgres(),
