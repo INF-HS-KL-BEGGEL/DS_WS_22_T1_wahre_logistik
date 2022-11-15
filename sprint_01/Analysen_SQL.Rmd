@@ -1,0 +1,130 @@
+---
+title: "Analysen"
+output: html_notebook
+---
+
+# Datenbankverbindung aufbauen
+
+```{r message=FALSE, warning=FALSE}
+library(DBI)
+library(dplyr)
+library(odbc)
+library(lubridate)
+library(tidyverse)
+library(leaflet)
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+
+```{r}
+con <- dbConnect(drv=RPostgres::Postgres(),
+                 dbname=Sys.getenv("dbname"),
+                 host=Sys.getenv("host"),
+                 port=Sys.getenv("port"),
+                 password=Sys.getenv("password"),
+                 user=Sys.getenv("user"))
+```
+
+```{r}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),#"PostgreSQL Unicode",
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+# Analysen
+
+## Artikel
+
+### Wie viele Artikel
+
+```{r}
+query_anzahlArtikel <- dbGetQuery(conn=con, statement = "select count(artikel) as anzahlArtikel from materialstaemme")
+print(query_anzahlArtikel)
+```
+
+### Wie oft Verkauft
+
+```{r warning=FALSE}
+query_verkäufeGesamt <- dbGetQuery(conn=con, statement = "select materialnummer, sum(abgang) as abgangGesamt, sum(vk_preis_num) as EinnahmenGesamt, count(*) as Einträge from verkaeufe Group By materialnummer")
+print(query_verkäufeGesamt)
+```
+
+### 10 Top-Selling Artikel
+```{r}
+query_verkäufeGesamt %>% arrange(desc(einnahmengesamt)) %>%head(10)
+```
+
+## Kunden
+
+### Wie viele Kunden
+
+```{r}
+query_kundenGesamt <- dbGetQuery(conn=con, statement = "select count(kndnr) from kundenstammdaten")
+print(query_kundenGesamt)
+```
+
+### Wie viel kaufen die Kunden
+
+```{r}
+query_KundenKaufLeistung <- dbGetQuery(conn=con, statement = "select kunde, sum(abgang) as GesamtAbgang, sum(vk_preis_num) as GesamtAusgaben, count(*) as Einträge from verkaeufe Group By kunde")
+
+print(query_KundenKaufLeistung)
+```
+
+### Geo-Vis von Kunden
+
+```{r}
+ks <- dbGetQuery(conn=con, statement = "select * from kundenstammdaten")
+
+map <- leaflet(data = ks[1:10,]) %>% addTiles() %>%  addMarkers(~laengengrad, ~breitengrad, popup = ~as.character(kndnr), label = ~as.character(kndnr))
+
+map
+```
+
+
+# Lieferschein
+
+## Wie groß sind die Lieferscheine
+
+```{r}
+query_LieferscheinGröße <- dbGetQuery(conn=con, statement = "select lieferschein, sum(abgang) as GesamtAbgang, sum(vk_preis_num) as GesamtEinnahmen, count(*) as Einträge from verkaeufe Group By lieferschein order by Einträge DESC")
+
+print(query_LieferscheinGröße)
+```
+
+## Preise, Volumen und Gewicht
+
+```{r}
+query_LieferscheinÜberblick <- dbGetQuery(conn=con, statement = "select verkaeufe.lieferschein, sum(verkaeufe.vk_preis_num) as GesamtEinnahmen, sum(verkaeufe.abgang*materialstaemme.ve_pro_dm3) as GesamtVolumen, sum(verkaeufe.abgang*materialstaemme.ve_pro_kg) as GesamtGewicht from verkaeufe Inner Join materialstaemme ON verkaeufe.materialnummer=materialstaemme.artikel Group By verkaeufe.lieferschein")
+
+print(query_LieferscheinÜberblick)
+```
+
+# Zeit
+
+## Lieferungen nach KW und Monaten
+
+```{r}
+#KW
+query_LieferungNachKW <- dbGetQuery(conn=con, statement = "SELECT DATE_PART('week',datum) as KW, Count(*) as VerkäufeProKW, sum(vk_preis_num) as GesamtEinnahmen From verkaeufe Group By KW")
+
+query_LieferungNachKW
+
+ggplot(query_LieferungNachKW, aes(x=kw, y=gesamteinnahmen/(sum(gesamteinnahmen)/100))) + geom_col() + geom_text(aes(label = kw), vjust = -0.5, size=2)
+
+#Months
+query_LieferungNachKW <- dbGetQuery(conn=con, statement = "SELECT DATE_PART('month',datum) as month, Count(*) as VerkäufeProKW, sum(vk_preis_num) as GesamtEinnahmen From verkaeufe Group By month")
+
+query_LieferungNachKW
+
+ggplot(query_LieferungNachKW, aes(x=month, y=gesamteinnahmen/(sum(gesamteinnahmen)/100))) + geom_col() + geom_text(aes(label = month), vjust = -0.5, size=2)
+```
+
+# Datenbankverbindung beenden
+```{r}
+dbDisconnect(con)
+```
