@@ -116,11 +116,6 @@ x_C <- abc_analyse_nach_zugriffen %>%
 abc_analyse_nach_zugriffen %>% nrow()
 ```
 
-<!-- ```{r} -->
-<!-- abc_zugriffe %>% nrow() -->
-<!-- ``` -->
-
-
 ## Nach Umsatz
 ```{r}
 abc_analyse_nach_umsatz <- verkaeufe %>% 
