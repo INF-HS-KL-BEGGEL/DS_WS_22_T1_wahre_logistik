@@ -252,20 +252,160 @@ abc_analyse_nach_abgang %>%
 
 
 # XYZ-Analyse
-Todo
+##Formeln:
+Erwartungswert=Mittelwert von Abgang
+Varianz = Summe von ((Abgang(Artikel) - Erwartungswert(Artikel)) zum Quadrat) /  Größe der Menge
+[https://axel-schroeder.de/varianz-standardabweichung-und-co-statistische-grundlagen-fuer-kleine-unternehmen/]
 
+Variationskoeffizient = Wurzel von (Varianz(Artikel)) / Erwartungswert(Artikel)
+[https://axel-schroeder.de/xyz-analyse-optimale-materialwirtschaft-schritt-fuer-schritt-fallstricke-beispieldateien/]
+
+
+### Erwartungswert
+
+```{r}
+#ermitlle den Abgang pro Produkt und Monat
+abgangProMonatUndArtikel <- dbGetQuery(conn=con, statement = "SELECT DATE_PART('month',datum) as month, materialnummer, sum(abgang) as abgangProMonat From verkaeufe Group By month, materialnummer")
+abgangProMonatUndArtikel
+```
+
+```{r}
+#ermittle den Gesamt Abgang pro Monat und seperat pro Produkt
+abgangProMonatUndArtikel <- abgangProMonatUndArtikel %>% ungroup()
+nachMaterialnummern <- abgangProMonatUndArtikel %>% select(materialnummer,abgangpromonat) %>% group_by(materialnummer) %>% summarize(abgang_gesamt=sum(abgangpromonat))
+nachMonat <- abgangProMonatUndArtikel %>% select(month,abgangpromonat) %>% group_by(month) %>% summarize(abgang_gesamt=sum(abgangpromonat))
+nachMaterialnummern
+nachMonat
+```
+
+
+```{r}
+#ermittle den Erwartungswert und die Menge an Monats Einträgen - offensichtlich 12
+months<-nrow(nachMonat)
+AbgangMittelwert <- nachMaterialnummern %>% ungroup() %>% mutate(erwartungswert=abgang_gesamt/months)
+AbgangMittelwert
+months
+```
+```{r}
+#ergänze den erwartungswert zur Tabelle vom Abgang pro Produkt und Monat
+AbgangMittelwert <- inner_join(x=abgangProMonatUndArtikel,y=AbgangMittelwert,by="materialnummer")
+AbgangMittelwert
+```
+
+### Varianz
+
+```{r}
+#dies stellt nur einen  Rechen Zwischenschritt dar für die Berechnung der Varianz
+AbgangVarianz <- mutate(AbgangMittelwert, abgang_minus_erwartungswert_zum_quadrat = ((abgangpromonat-erwartungswert)**2))
+AbgangVarianz
+```
+
+```{r}
+#ermittle die Varianz
+AbgangVarianz <- AbgangVarianz %>% ungroup()
+AbgangVarianz <- AbgangVarianz %>% select(materialnummer,erwartungswert,abgang_minus_erwartungswert_zum_quadrat) %>% group_by(materialnummer) %>% summarize(varianz=sum(abgang_minus_erwartungswert_zum_quadrat)/months)
+
+AbgangVarianz
+```
+
+```{r}
+#ermittle die Standardabweichung
+AbgangVarianz <- AbgangVarianz %>% mutate(standardabweichung=sqrt(varianz))
+AbgangVarianz <- inner_join(x=AbgangVarianz,y=(AbgangMittelwert %>% select(materialnummer,erwartungswert)),by="materialnummer")
+
+AbgangVarianz
+```
+
+
+### Variationskoeffizient
+
+```{r}
+#AbgangVarianzkoeffizient
+Variationskoeffizient <- mutate(AbgangVarianz, Variationskoeffizient = (standardabweichung/erwartungswert)*100)
+Variationskoeffizient
+```
+
+### Artikelanteil und XYZ Klassifizierung
+```{r}
+#sortieren
+Variationskoeffizient <- Variationskoeffizient %>% arrange(Variationskoeffizient) 
+#ermitteln des artikel anteils
+Variationskoeffizient <- Variationskoeffizient %>% ungroup()%>% mutate(anteil_artikel=row_number()/n())
+Variationskoeffizient
+```
+
+
+```{r}
+#get max and min values of Variationskoeffizient
+maximum <- max(Variationskoeffizient$Variationskoeffizient)
+maximum
+minimum <- min(Variationskoeffizient$Variationskoeffizient)
+minimum
+prozentualTeil <-maximum/100
+
+# X, Y, Z werden nach Lust und Laune gwählt, da gibt es keine Richtlinie
+Variationskoeffizient <- Variationskoeffizient %>% mutate(klasse= 
+                                                                        case_when(
+                                                                          Variationskoeffizient/prozentualTeil<=20 ~ "X",
+                                                                          Variationskoeffizient/prozentualTeil<=50 & Variationskoeffizient/prozentualTeil>20 ~ "Y",
+                                                                          TRUE ~ "Z"
+                                                                        ))#Variationskoeffizient/prozentualTeil
+Variationskoeffizient
+```
+
+### Plot
+
+```{r}
+#plot all xyz Values
+x_B <- Variationskoeffizient %>% 
+  filter(klasse == "X") %>% 
+  arrange(Variationskoeffizient) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
+
+x_C <- Variationskoeffizient %>% 
+  filter(klasse == "Y") %>% 
+  arrange(Variationskoeffizient) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
+
+
+
+Variationskoeffizient %>% 
+  ggplot() +
+  geom_line(mapping = aes(x=anteil_artikel*100, y=Variationskoeffizient, color=klasse)) +
+  geom_hline(yintercept = 0, size=0.8) + 
+  geom_vline(xintercept = 0, size=0.8) +
+  scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits = 0)) +
+  scale_y_continuous(breaks = seq(from=0, to=1200, by=50)) +
+  coord_fixed(ratio = 0.3) +
+  labs(
+    x = "Anteil Artikel (in %)", 
+    y = "Variationskoeffizient",
+    color = "Klasse",
+    title = "XYZ-Analyse nach Abgängen"
+  )
+```
 
 
 # ABC-XYZ-Analyse
-Todo
+Die Analyse fokussiert sich auf die Menge des Abgangs.
+```{r include=FALSE}
+#merge abc and xyz
+matrixAnalyse <- inner_join(x=abc_analyse_nach_umsatz,y=Variationskoeffizient,by="materialnummer")
+matrixAnalyse <- matrixAnalyse %>% rename(abc_analyse=klasse.x, xyz_analyse=klasse.y)
+matrixAnalyse <- matrixAnalyse %>% select(materialnummer,abc_analyse,xyz_analyse)
+#calculate the amount of entrys per ABC and XYZ combination
+matrixAnalyse <- matrixAnalyse %>% group_by(abc_analyse,xyz_analyse) %>% summarize(Eintraege=n())
+matrixAnalyse <- matrixAnalyse %>% mutate(eintraege_verhaeltnis=Eintraege/(sum(matrixAnalyse$Eintraege)/100))
+```
 
-
-
-
+```{r include=FALSE}
+#place the values in a matrix
+castedMatrixAnalyse <- matrix(matrixAnalyse$eintraege_verhaeltnis, nrow = 3, dimnames = list(c("X","Y","Z"), c("A","B","C")))
+castedMatrixAnalyse
+```
 
 ```{r include=FALSE}
 DBI::dbDisconnect(con)
 ```
-
-
-
