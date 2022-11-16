@@ -115,9 +115,10 @@ x_C <- abc_analyse_nach_zugriffen %>%
 ```{r}
 abc_analyse_nach_zugriffen %>% nrow()
 ```
-```{r}
-abc_zugriffe %>% nrow()
-```
+
+<!-- ```{r} -->
+<!-- abc_zugriffe %>% nrow() -->
+<!-- ``` -->
 
 
 ## Nach Umsatz
@@ -400,7 +401,7 @@ matrixAnalyse <- matrixAnalyse %>% group_by(abc_analyse,xyz_analyse) %>% summari
 matrixAnalyse <- matrixAnalyse %>% mutate(eintraege_verhaeltnis=Eintraege/(sum(matrixAnalyse$Eintraege)/100))
 ```
 
-```{r include=FALSE}
+```{r}
 #place the values in a matrix
 castedMatrixAnalyse <- matrix(matrixAnalyse$eintraege_verhaeltnis, nrow = 3, dimnames = list(c("X","Y","Z"), c("A","B","C")))
 castedMatrixAnalyse
