@@ -94,7 +94,7 @@ SELECT kunde, SUM(vk_preis_num) as vk_preis_num_gesamt, SUM(abgang) as abgang_ge
 ```{r}
 ks <- dbGetQuery(conn=con, statement = "select * from kundenstammdaten")
 
-map <- leaflet(data = ks[1:10,]) %>% addTiles() %>%  addMarkers(~laengengrad, ~breitengrad, popup = ~as.character(kndnr), label = ~as.character(kndnr))
+map <- leaflet(data = ks) %>% addTiles() %>%  addCircles(~laengengrad, ~breitengrad,  radius = .5, opacity = .2, col = "blue")
 
 map
 ```
