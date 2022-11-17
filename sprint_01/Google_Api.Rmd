@@ -1,0 +1,79 @@
+---
+title: "R Google Maps"
+author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
+date: "17.11.2022"
+output: 
+  html_notebook:
+        toc: true
+        toc_float: true
+        code_folding: none
+        number_sections: true
+---
+
+
+```{r include=FALSE,message=FALSE, warning=FALSE}
+library(DBI)
+library(dplyr)
+library(odbc)
+library(lubridate)
+library(tidyverse)
+library(leaflet)
+library(ggplot2)
+library(ggmap)
+readRenviron("../env_files/.Renviron.postgres")
+readRenviron("../env_files/.Renviron.ggmap")
+```
+
+```{r include=FALSE,message=FALSE, warning=FALSE}
+con <- dbConnect(drv=RPostgres::Postgres(),
+                 dbname=Sys.getenv("dbname"),
+                 host=Sys.getenv("host"),
+                 port=Sys.getenv("port"),
+                 password=Sys.getenv("password"),
+                 user=Sys.getenv("user"))
+```
+
+```{r include=FALSE,message=FALSE, warning=FALSE}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),#"PostgreSQL Unicode",
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+# Kunden via Google Maps
+
+## Kundentabelle
+```{r message=FALSE, warning=FALSE}
+ks <- dbGetQuery(conn=con, statement = "select kndnr_tagless, laengengrad, breitengrad from kundenstammdaten") %>% rename(Kundennummer = kndnr_tagless, Longitude = laengengrad , Latitude = breitengrad)
+
+ks
+```
+
+
+## Kunden als Punkte
+
+```{r include=FALSE,message=FALSE, warning=FALSE}
+register_google(key = Sys.getenv("api_key"))
+zoom_level <- 6
+```
+
+
+```{r message=FALSE, warning=FALSE}
+map <- qmap('Germany', zoom = zoom_level, maptype = 'roadmap')
+map + geom_point(data = ks, aes(x = Longitude, y = Latitude), color="red", size=1, alpha=0.5)
+```
+
+## Kunden als Dichte
+
+```{r message=FALSE, warning=FALSE}
+map + stat_density2d(
+  aes(x = Longitude, y = Latitude, fill = ..level.., alpha = ..level..), 
+  linewidth = 1, data = ks, geom = "polygon", contour = TRUE, ) + scale_fill_gradient(low = "blue", high = "red") 
+```
+
+```{r include=FALSE,message=FALSE, warning=FALSE}
+dbDisconnect(con)
+```
