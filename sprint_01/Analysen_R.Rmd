@@ -12,7 +12,7 @@ library(dplyr)
 library(lubridate)
 library(tidyverse)
 library(leaflet)
-readRenviron("../env_files/Renviron.postgres")
+readRenviron("../env_files/.Renviron.postgres")
 ```
 
 ```{r}
@@ -26,6 +26,22 @@ con <- DBI::dbConnect(odbc::odbc(),
 ```
 
 # Analysen
+
+## Gesamtumsatz
+
+```{r}
+
+vk <- dbGetQuery(conn=con, statement = "select materialnummer, abgang, vk_preis_num from verkaeufe")
+gvk <- vk %>% summarise(vk_preis_num_gesamt=sum(vk_preis_num))
+gvk
+
+```
+
+```{sql connection=con}
+
+SELECT SUM(vk_preis_num) AS Gesamtumsatz FROM verkaeufe;
+
+```
 
 ## Artikel
 
@@ -82,6 +98,7 @@ kvk <- dbGetQuery(conn=con, statement = "select kunde, abgang, vk_preis_num from
 
 gkvk <- kvk %>% group_by(kunde) %>% summarise(vk_preis_num_gesamt=sum(vk_preis_num), abgang_gesamt = sum(abgang), datensaetze= n()) %>% arrange(desc(vk_preis_num_gesamt), desc(abgang_gesamt), desc(datensaetze))
 
+
 gkvk
 ```
 
@@ -125,7 +142,9 @@ gvkjms
 # Zeit
 
 ## Lieferungen nach KW
+
 ```{r}
+
 vk <- dbGetQuery(conn=con, statement = "select datum, vk_preis_num from verkaeufe")
 
 gvk <- vk %>% mutate(kw = cut.Date(datum, breaks = "1 week", labels = FALSE)) %>% group_by(kw) %>% summarize(vk_preis_gesamt = sum(vk_preis_num))
