@@ -47,30 +47,16 @@ verkaeufe <- get_table_as_tibble(con, "verkaeufe")
 
 # ABC-Analyse
 
-```{r}
-# Todo: Versuch
+```{r include=FALSE}
 abc_analyse <- function(.data, column, thresholds){
   classes <- LETTERS[1:(length(thresholds)+1)]
   
-  
-  # class_mappings <- c(expr(!!ensym(column) <= thresholds[1] ~ classes[1]))
-  # for(i in 2:length(thresholds)-1){
-  #   class_mappings <- c(class_mappings, expr(!!ensym(column) > thresholds[i-1] & !!ensym(column) <= thresholds[i]  ~ classes[i]))
-  # }
-  # class_mappings <- c(class_mappings, TRUE ~ classes[length(classes)])
-  # print(class_mappings)
-  
-  
-  # print(classes)
   class_mappings <- c(glue('anteil_kumuliert <= {thresholds[1]} ~ "{classes[1]}"'))
-  # print(class_mappings)
   for(i in 2:length(thresholds)){
     class_mappings <- c(class_mappings, glue('anteil_kumuliert > {thresholds[i-1]} & anteil_kumuliert <= {thresholds[i]} ~ "{classes[i]}"'))
   }
-  
   class_mappings <- c(class_mappings, glue('TRUE ~ "{classes[length(classes)]}"'))
   class_mappings <- parse_exprs(class_mappings)
-  # print(class_mappings)
   
   .data %>% 
     arrange(desc(!!ensym(column))) %>% 
@@ -78,13 +64,6 @@ abc_analyse <- function(.data, column, thresholds){
     mutate(anteil = !!ensym(column)/sum(!!ensym(column))) %>% 
     mutate(anteil_kumuliert = cumsum(anteil)) %>%
     mutate(klasse = case_when(!!!class_mappings)) %>% 
-    # mutate(klasse=
-    #        case_when(
-    #          anteil_kumuliert <= thresholds[1] ~ "A",
-    #          anteil_kumuliert > thresholds[1] & anteil_kumuliert <= thresholds[2] ~ "B",
-    #          TRUE ~ "C"
-    #          )
-    #      ) %>% 
     mutate(klasse = as.factor(klasse)) %>%
     return()
 }
@@ -93,110 +72,121 @@ abc_analyse <- function(.data, column, thresholds){
 ## Nach Zugriffen
 Ein Zugriff bedeutet, dass wegen einem Artikel ins Lager gegangen werden muss. Hierbei ist es unerheblich, wie viele Verpackungseinheiten aus dem Lager geholt werden.
 
-```{r}
+```{r include=FALSE}
+# abc_analyse_nach_zugriffen <- verkaeufe %>%
+#   group_by(materialnummer) %>%
+#   summarise(anzahl_zugriffe = n()) %>%
+#   arrange(desc(anzahl_zugriffe)) %>% 
+#   mutate(rang = row_number()) %>% 
+#   mutate(anteil = anzahl_zugriffe/sum(anzahl_zugriffe)) %>% 
+#   mutate(anteil_kumuliert = cumsum(anteil)) %>% 
+#   mutate(klasse=
+#            case_when(
+#              anteil_kumuliert <= 0.8 ~ "A",
+#              anteil_kumuliert > 0.8 & anteil_kumuliert <= 0.9 ~ "B",
+#              TRUE ~ "C"
+#              )
+#          ) %>% 
+#   mutate(klasse = as.factor(klasse))
+```
+
+
+```{r include=FALSE}
 abc_analyse_nach_zugriffen <- verkaeufe %>%
   group_by(materialnummer) %>%
   summarise(anzahl_zugriffe = n()) %>%
-  arrange(desc(anzahl_zugriffe)) %>% 
-  mutate(rang = row_number()) %>% 
-  mutate(anteil = anzahl_zugriffe/sum(anzahl_zugriffe)) %>% 
-  mutate(anteil_kumuliert = cumsum(anteil)) %>% 
-  mutate(klasse=
-           case_when(
-             anteil_kumuliert <= 0.8 ~ "A",
-             anteil_kumuliert > 0.8 & anteil_kumuliert <= 0.9 ~ "B",
-             TRUE ~ "C"
-             )
-         ) %>% 
-  mutate(klasse = as.factor(klasse))
+  abc_analyse(anzahl_zugriffe, thresholds = c(0.075, 0.15, 0.3, 0.45, 0.65, 0.75, 0.9, 0.96))
+  # abc_analyse(anzahl_zugriffe, thresholds = c(0.1, 0.8, 0.9))
 ```
 
 
 ```{r}
-# Todo: versuch
-abc_analyse_nach_zugriffen <- verkaeufe %>%
-  group_by(materialnummer) %>%
-  summarise(anzahl_zugriffe = n()) %>%
-  abc_analyse("anzahl_zugriffe", thresholds = c(0.8, 0.9, 0.95))
-```
+#Todo: Versuch
+# anzahl_zugriffe_gesamt <- sum(abc_analyse_nach_zugriffen$anzahl_zugriffe)
 
-
-
-
-```{r}
-abc_analyse_nach_zugriffen %>% 
-  head(10)
-```
-
-
-
-```{r}
-abc_analyse_nach_zugriffen <- abc_analyse_nach_zugriffen %>% 
+abc_analyse_nach_zugriffen %>%
   rename(anteil_zugriffe = anteil, anteil_zugriffe_kumuliert = anteil_kumuliert) %>% 
-  mutate(anteil_artikel = row_number()/n())
-```
-
-```{r}
-x_B <- abc_analyse_nach_zugriffen %>% 
-  filter(klasse == "B") %>% 
-  arrange(rang) %>%
-  head(1) %>% 
-  pull("anteil_artikel")
-
-x_C <- abc_analyse_nach_zugriffen %>% 
-  filter(klasse == "C") %>% 
-  arrange(rang) %>%
-  head(1) %>% 
-  pull("anteil_artikel")
-
-
- abc_analyse_nach_zugriffen %>% 
+  group_by(klasse) %>% 
+  mutate(anteil_artikel_in_klasse = row_number()/n(), anteil_zugriffe_kumuliert_in_klasse = cumsum(anteil_zugriffe)/sum(anteil_zugriffe)) %>% 
+  # filter(klasse == "A") %>% 
   ggplot() +
-  geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_zugriffe_kumuliert*100, color=klasse)) +
-  geom_hline(yintercept = 0, size=0.8) + 
+  geom_line(mapping = aes(x = anteil_artikel_in_klasse, anteil_zugriffe_kumuliert_in_klasse), color="blue") +
+  geom_hline(yintercept = 0, size=0.8) +
   geom_vline(xintercept = 0, size=0.8) +
-  geom_vline(xintercept = c(x_B, x_C)*100, linetype="dashed") +
-  scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits=1)) +
-  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
-  coord_fixed(ratio = 1) +
+  facet_wrap(~klasse) +
   labs(
-    x = "Anteil Artikel (in %)", 
-    y = "Anteil Zugriffe kumuliert (in %)",
-    color = "Klasse",
-    title = "ABC-Analyse nach Zugriffen"
+    x = "Anteil Artikel (in der jew. Klasse)",
+    y = "Anteil an den Zugriffen (in der jew. Klasse)"
   )
 ```
 
-```{r}
-abc_analyse_nach_zugriffen %>% nrow()
+
+```{r include=FALSE}
+# abc_analyse_nach_zugriffen <- abc_analyse_nach_zugriffen %>% 
+#   rename(anteil_zugriffe = anteil, anteil_zugriffe_kumuliert = anteil_kumuliert) %>% 
+#   mutate(anteil_artikel = row_number()/n())
 ```
 
-## Nach Umsatz
 ```{r}
+# x_B <- abc_analyse_nach_zugriffen %>%
+#   filter(klasse == "B") %>%
+#   arrange(rang) %>%
+#   head(1) %>%
+#   pull("anteil_artikel")
+# 
+# x_C <- abc_analyse_nach_zugriffen %>%
+#   filter(klasse == "C") %>%
+#   arrange(rang) %>%
+#   head(1) %>%
+#   pull("anteil_artikel")
+# 
+# 
+#  abc_analyse_nach_zugriffen %>% 
+#   ggplot() +
+#   geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_zugriffe_kumuliert*100, color=klasse)) +
+  # geom_hline(yintercept = 0, size=0.8) +
+  # geom_vline(xintercept = 0, size=0.8) +
+#   geom_vline(xintercept = c(x_B, x_C)*100, linetype="dashed") +
+#   scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits=1)) +
+#   scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+#   coord_fixed(ratio = 1) +
+#   labs(
+#     x = "Anteil Artikel (in %)", 
+#     y = "Anteil Zugriffe kumuliert (in %)",
+#     color = "Klasse",
+#     title = "ABC-Analyse nach Zugriffen"
+#   )
+```
+
+
+
+## Nach Umsatz
+```{r include=FALSE}
+# abc_analyse_nach_umsatz <- verkaeufe %>% 
+#   group_by(materialnummer) %>% 
+#   summarise(umsatz = sum(vk_preis_num)) %>% 
+#   arrange(desc(umsatz)) %>% 
+#   mutate(rang=row_number()) %>% 
+#   mutate(anteil = umsatz/sum(umsatz)) %>% 
+#   mutate(anteil_kumuliert = cumsum(anteil)) %>% 
+#   mutate(klasse=
+#            case_when(
+#              anteil_kumuliert <= 0.8 ~ "A",
+#              anteil_kumuliert > 0.8 & anteil_kumuliert <= 0.9 ~ "B",
+#              TRUE ~ "C"
+#              )
+#          ) %>% 
+#   mutate(klasse = as.factor(klasse))
+```
+
+```{r include=FALSE}
 abc_analyse_nach_umsatz <- verkaeufe %>% 
   group_by(materialnummer) %>% 
   summarise(umsatz = sum(vk_preis_num)) %>% 
-  arrange(desc(umsatz)) %>% 
-  mutate(rang=row_number()) %>% 
-  mutate(anteil = umsatz/sum(umsatz)) %>% 
-  mutate(anteil_kumuliert = cumsum(anteil)) %>% 
-  mutate(klasse=
-           case_when(
-             anteil_kumuliert <= 0.8 ~ "A",
-             anteil_kumuliert > 0.8 & anteil_kumuliert <= 0.9 ~ "B",
-             TRUE ~ "C"
-             )
-         ) %>% 
-  mutate(klasse = as.factor(klasse))
+  abc_analyse(column = umsatz, thresholds = c(0.8, 0.9))
 ```
 
-```{r}
-abc_analyse_nach_umsatz %>% 
-  head(10)
-```
-
-
-```{r}
+```{r include=FALSE}
 abc_analyse_nach_umsatz <- abc_analyse_nach_umsatz %>% 
   rename(anteil_umsatz = anteil, anteil_umsatz_kumuliert = anteil_kumuliert) %>% 
   mutate(anteil_artikel = row_number()/n())
@@ -238,32 +228,36 @@ abc_analyse_nach_umsatz %>%
 
 ## Nach Summe von Abgang
 
-```{r}
+```{r include=FALSE}
+# abc_analyse_nach_abgang <- verkaeufe %>% 
+#   select(materialnummer, abgang) %>% 
+#   group_by(materialnummer) %>% 
+#   summarise(count_abgang=sum(abgang)) %>% 
+#   arrange(desc(count_abgang)) %>% 
+#   mutate(rang=row_number()) %>% 
+#   mutate(anteil_abgang=count_abgang/sum(count_abgang)) %>%
+#   mutate(anteil_abgang_kumuliert=cumsum(anteil_abgang)) %>% 
+#   mutate(klasse=
+#            case_when(
+#              anteil_abgang_kumuliert <= 0.8 ~ "A",
+#              anteil_abgang_kumuliert > 0.8 & anteil_abgang_kumuliert <= 0.9 ~ "B",
+#              TRUE ~ "C"
+#              )
+#          ) %>% 
+#   mutate(klasse = as.factor(klasse)) 
+```
+
+```{r include=FALSE}
 abc_analyse_nach_abgang <- verkaeufe %>% 
   select(materialnummer, abgang) %>% 
   group_by(materialnummer) %>% 
   summarise(count_abgang=sum(abgang)) %>% 
-  arrange(desc(count_abgang)) %>% 
-  mutate(rang=row_number()) %>% 
-  mutate(anteil_abgang=count_abgang/sum(count_abgang)) %>%
-  mutate(anteil_abgang_kumuliert=cumsum(anteil_abgang)) %>% 
-  mutate(klasse=
-           case_when(
-             anteil_abgang_kumuliert <= 0.8 ~ "A",
-             anteil_abgang_kumuliert > 0.8 & anteil_abgang_kumuliert <= 0.9 ~ "B",
-             TRUE ~ "C"
-             )
-         ) %>% 
-  mutate(klasse = as.factor(klasse)) 
+  abc_analyse(column = count_abgang, thresholds = c(0.8, 0.9))
 ```
 
-```{r}
-abc_analyse_nach_abgang %>% 
-  head(10)
-```
-
-```{r}
+```{r include=FALSE}
 abc_analyse_nach_abgang <- abc_analyse_nach_abgang %>% 
+  rename(anteil_abgang = anteil, anteil_abgang_kumuliert = anteil_kumuliert) %>% 
   mutate(anteil_artikel=row_number()/n())
 ```
 
