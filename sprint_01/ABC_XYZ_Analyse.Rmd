@@ -70,23 +70,20 @@ abc_analyse <- function(.data, column, thresholds){
 ```
 
 ## Nach Zugriffen
-Ein Zugriff bedeutet, dass wegen einem Artikel ins Lager gegangen werden muss. Hierbei ist es unerheblich, wie viele Verpackungseinheiten aus dem Lager geholt werden.
-
 ```{r include=FALSE}
+#Ein Zugriff bedeutet, dass wegen einem Artikel ins Lager gegangen werden muss. Hierbei ist es unerheblich, wie viele Verpackungseinheiten aus dem Lager geholt werden.
+
 abc_analyse_nach_zugriffen <- verkaeufe %>%
   group_by(materialnummer) %>%
   summarise(anzahl_zugriffe = n()) %>%
-  abc_analyse(anzahl_zugriffe, thresholds = c(0.075, 0.15, 0.3, 0.45, 0.65, 0.75, 0.9, 0.96))
-  # abc_analyse(anzahl_zugriffe, thresholds = c(0.1, 0.8, 0.9))
+  abc_analyse(anzahl_zugriffe, thresholds = c(0.075, 0.15, 0.3, 0.45, 0.65, 0.75, 0.9, 0.96)) %>%
+  # abc_analyse(anzahl_zugriffe, thresholds = c(0.1, 0.8, 0.9)) %>% 
+  rename(anteil_zugriffe = anteil, anteil_zugriffe_kumuliert = anteil_kumuliert)
 ```
 
 
-```{r}
-#Todo: Versuch
-# anzahl_zugriffe_gesamt <- sum(abc_analyse_nach_zugriffen$anzahl_zugriffe)
-
+```{r echo=FALSE}
 abc_analyse_nach_zugriffen %>%
-  rename(anteil_zugriffe = anteil, anteil_zugriffe_kumuliert = anteil_kumuliert) %>% 
   group_by(klasse) %>% 
   mutate(anteil_artikel_in_klasse = row_number()/n(), anteil_zugriffe_kumuliert_in_klasse = cumsum(anteil_zugriffe)/sum(anteil_zugriffe)) %>% 
   # filter(klasse == "A") %>% 
@@ -102,41 +99,22 @@ abc_analyse_nach_zugriffen %>%
 ```
 
 
-```{r include=FALSE}
-# abc_analyse_nach_zugriffen <- abc_analyse_nach_zugriffen %>% 
-#   rename(anteil_zugriffe = anteil, anteil_zugriffe_kumuliert = anteil_kumuliert) %>% 
-#   mutate(anteil_artikel = row_number()/n())
-```
-
-```{r}
-# x_B <- abc_analyse_nach_zugriffen %>%
-#   filter(klasse == "B") %>%
-#   arrange(rang) %>%
-#   head(1) %>%
-#   pull("anteil_artikel")
-# 
-# x_C <- abc_analyse_nach_zugriffen %>%
-#   filter(klasse == "C") %>%
-#   arrange(rang) %>%
-#   head(1) %>%
-#   pull("anteil_artikel")
-# 
-# 
-#  abc_analyse_nach_zugriffen %>% 
-#   ggplot() +
-#   geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_zugriffe_kumuliert*100, color=klasse)) +
-  # geom_hline(yintercept = 0, size=0.8) +
-  # geom_vline(xintercept = 0, size=0.8) +
-#   geom_vline(xintercept = c(x_B, x_C)*100, linetype="dashed") +
-#   scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits=1)) +
-#   scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
-#   coord_fixed(ratio = 1) +
-#   labs(
-#     x = "Anteil Artikel (in %)", 
-#     y = "Anteil Zugriffe kumuliert (in %)",
-#     color = "Klasse",
-#     title = "ABC-Analyse nach Zugriffen"
-#   )
+```{r echo=FALSE}
+ abc_analyse_nach_zugriffen %>%
+  mutate(anteil_artikel = row_number()/n()) %>% 
+  ggplot() +
+  geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_zugriffe_kumuliert*100, color=klasse)) +
+  geom_hline(yintercept = 0, size=0.8) +
+  geom_vline(xintercept = 0, size=0.8) +
+  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  coord_fixed(ratio = 1) +
+  labs(
+    x = "Anteil Artikel (in %)",
+    y = "Anteil Zugriffe kumuliert (in %)",
+    color = "Klasse",
+    title = "ABC-Analyse nach Zugriffen"
+  )
 ```
 
 
@@ -155,7 +133,7 @@ abc_analyse_nach_umsatz <- abc_analyse_nach_umsatz %>%
   mutate(anteil_artikel = row_number()/n())
 ```
 
-```{r}
+```{r echo=FALSE}
 x_B <- abc_analyse_nach_umsatz %>% 
   filter(klasse == "B") %>% 
   arrange(rang) %>%
@@ -204,7 +182,7 @@ abc_analyse_nach_abgang <- abc_analyse_nach_abgang %>%
   mutate(anteil_artikel=row_number()/n())
 ```
 
-```{r}
+```{r echo=FALSE}
 x_B <- abc_analyse_nach_abgang %>% 
   filter(klasse == "B") %>% 
   arrange(rang) %>%
