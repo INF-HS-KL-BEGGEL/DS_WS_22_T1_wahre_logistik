@@ -73,25 +73,6 @@ abc_analyse <- function(.data, column, thresholds){
 Ein Zugriff bedeutet, dass wegen einem Artikel ins Lager gegangen werden muss. Hierbei ist es unerheblich, wie viele Verpackungseinheiten aus dem Lager geholt werden.
 
 ```{r include=FALSE}
-# abc_analyse_nach_zugriffen <- verkaeufe %>%
-#   group_by(materialnummer) %>%
-#   summarise(anzahl_zugriffe = n()) %>%
-#   arrange(desc(anzahl_zugriffe)) %>% 
-#   mutate(rang = row_number()) %>% 
-#   mutate(anteil = anzahl_zugriffe/sum(anzahl_zugriffe)) %>% 
-#   mutate(anteil_kumuliert = cumsum(anteil)) %>% 
-#   mutate(klasse=
-#            case_when(
-#              anteil_kumuliert <= 0.8 ~ "A",
-#              anteil_kumuliert > 0.8 & anteil_kumuliert <= 0.9 ~ "B",
-#              TRUE ~ "C"
-#              )
-#          ) %>% 
-#   mutate(klasse = as.factor(klasse))
-```
-
-
-```{r include=FALSE}
 abc_analyse_nach_zugriffen <- verkaeufe %>%
   group_by(materialnummer) %>%
   summarise(anzahl_zugriffe = n()) %>%
@@ -162,24 +143,6 @@ abc_analyse_nach_zugriffen %>%
 
 ## Nach Umsatz
 ```{r include=FALSE}
-# abc_analyse_nach_umsatz <- verkaeufe %>% 
-#   group_by(materialnummer) %>% 
-#   summarise(umsatz = sum(vk_preis_num)) %>% 
-#   arrange(desc(umsatz)) %>% 
-#   mutate(rang=row_number()) %>% 
-#   mutate(anteil = umsatz/sum(umsatz)) %>% 
-#   mutate(anteil_kumuliert = cumsum(anteil)) %>% 
-#   mutate(klasse=
-#            case_when(
-#              anteil_kumuliert <= 0.8 ~ "A",
-#              anteil_kumuliert > 0.8 & anteil_kumuliert <= 0.9 ~ "B",
-#              TRUE ~ "C"
-#              )
-#          ) %>% 
-#   mutate(klasse = as.factor(klasse))
-```
-
-```{r include=FALSE}
 abc_analyse_nach_umsatz <- verkaeufe %>% 
   group_by(materialnummer) %>% 
   summarise(umsatz = sum(vk_preis_num)) %>% 
@@ -227,26 +190,6 @@ abc_analyse_nach_umsatz %>%
 
 
 ## Nach Summe von Abgang
-
-```{r include=FALSE}
-# abc_analyse_nach_abgang <- verkaeufe %>% 
-#   select(materialnummer, abgang) %>% 
-#   group_by(materialnummer) %>% 
-#   summarise(count_abgang=sum(abgang)) %>% 
-#   arrange(desc(count_abgang)) %>% 
-#   mutate(rang=row_number()) %>% 
-#   mutate(anteil_abgang=count_abgang/sum(count_abgang)) %>%
-#   mutate(anteil_abgang_kumuliert=cumsum(anteil_abgang)) %>% 
-#   mutate(klasse=
-#            case_when(
-#              anteil_abgang_kumuliert <= 0.8 ~ "A",
-#              anteil_abgang_kumuliert > 0.8 & anteil_abgang_kumuliert <= 0.9 ~ "B",
-#              TRUE ~ "C"
-#              )
-#          ) %>% 
-#   mutate(klasse = as.factor(klasse)) 
-```
-
 ```{r include=FALSE}
 abc_analyse_nach_abgang <- verkaeufe %>% 
   select(materialnummer, abgang) %>% 
