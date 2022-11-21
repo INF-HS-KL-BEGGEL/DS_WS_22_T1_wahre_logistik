@@ -25,7 +25,7 @@ readRenviron("../env_files/.Renviron.postgres")
 
 ```{r include=FALSE}
 con <- DBI::dbConnect(odbc::odbc(),
-                      Driver   = "PostgreSQL Unicode(x64)",
+                      Driver   = Sys.getenv("driver"),
                       Server   = Sys.getenv("host"),
                       Database = Sys.getenv("dbname"),
                       UID      = Sys.getenv("user"),
@@ -47,6 +47,49 @@ verkaeufe <- get_table_as_tibble(con, "verkaeufe")
 
 # ABC-Analyse
 
+```{r}
+# Todo: Versuch
+abc_analyse <- function(.data, column, thresholds){
+  classes <- LETTERS[1:(length(thresholds)+1)]
+  
+  
+  # class_mappings <- c(expr(!!ensym(column) <= thresholds[1] ~ classes[1]))
+  # for(i in 2:length(thresholds)-1){
+  #   class_mappings <- c(class_mappings, expr(!!ensym(column) > thresholds[i-1] & !!ensym(column) <= thresholds[i]  ~ classes[i]))
+  # }
+  # class_mappings <- c(class_mappings, TRUE ~ classes[length(classes)])
+  # print(class_mappings)
+  
+  
+  # print(classes)
+  class_mappings <- c(glue('anteil_kumuliert <= {thresholds[1]} ~ "{classes[1]}"'))
+  # print(class_mappings)
+  for(i in 2:length(thresholds)){
+    class_mappings <- c(class_mappings, glue('anteil_kumuliert > {thresholds[i-1]} & anteil_kumuliert <= {thresholds[i]} ~ "{classes[i]}"'))
+  }
+  
+  class_mappings <- c(class_mappings, glue('TRUE ~ "{classes[length(classes)]}"'))
+  class_mappings <- parse_exprs(class_mappings)
+  # print(class_mappings)
+  
+  .data %>% 
+    arrange(desc(!!ensym(column))) %>% 
+    mutate(rang = row_number()) %>% 
+    mutate(anteil = !!ensym(column)/sum(!!ensym(column))) %>% 
+    mutate(anteil_kumuliert = cumsum(anteil)) %>%
+    mutate(klasse = case_when(!!!class_mappings)) %>% 
+    # mutate(klasse=
+    #        case_when(
+    #          anteil_kumuliert <= thresholds[1] ~ "A",
+    #          anteil_kumuliert > thresholds[1] & anteil_kumuliert <= thresholds[2] ~ "B",
+    #          TRUE ~ "C"
+    #          )
+    #      ) %>% 
+    mutate(klasse = as.factor(klasse)) %>%
+    return()
+}
+```
+
 ## Nach Zugriffen
 Ein Zugriff bedeutet, dass wegen einem Artikel ins Lager gegangen werden muss. Hierbei ist es unerheblich, wie viele Verpackungseinheiten aus dem Lager geholt werden.
 
@@ -67,6 +110,18 @@ abc_analyse_nach_zugriffen <- verkaeufe %>%
          ) %>% 
   mutate(klasse = as.factor(klasse))
 ```
+
+
+```{r}
+# Todo: versuch
+abc_analyse_nach_zugriffen <- verkaeufe %>%
+  group_by(materialnummer) %>%
+  summarise(anzahl_zugriffe = n()) %>%
+  abc_analyse("anzahl_zugriffe", thresholds = c(0.8, 0.9, 0.95))
+```
+
+
+
 
 ```{r}
 abc_analyse_nach_zugriffen %>% 
