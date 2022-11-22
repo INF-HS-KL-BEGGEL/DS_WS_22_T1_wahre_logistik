@@ -237,7 +237,7 @@ abc_analyse_nach_umsatz %>%
 
 
 
-## Nach Summe von Abgang
+## Material nach Summe von Abgang
 ```{r include=FALSE}
 abc_analyse_nach_abgang <- verkaeufe %>% 
   select(materialnummer, abgang) %>% 
@@ -284,6 +284,66 @@ abc_analyse_nach_abgang %>%
   )
 ```
 
+## Kunden nach Umsatz
+```{r include=FALSE}
+abc_analyse_kunde_nach_umsatz <- verkaeufe %>% 
+  group_by(kunde) %>% 
+  summarise(umsatz = sum(vk_preis_num)) %>% 
+  abc_analyse(column = umsatz, thresholds = c(0.4, 0.8, 0.96, 0.99)) %>% 
+  rename(anteil_umsatz = anteil, anteil_umsatz_kumuliert = anteil_kumuliert)
+```
+
+```{r echo=FALSE}
+abc_analyse_kunde_nach_umsatz %>% 
+  group_by(klasse) %>% 
+  mutate(anteil_kunde_kumuliert_in_klasse = row_number()/n(), anteil_umsatz_kumuliert_in_klasse = cumsum(anteil_umsatz)/sum(anteil_umsatz)) %>%
+  ggplot() +
+  geom_line(mapping = aes(x=anteil_kunde_kumuliert_in_klasse*100, y=anteil_umsatz_kumuliert_in_klasse*100), color="blue") +
+  facet_wrap(~klasse) + 
+  geom_hline(yintercept = 0, size=0.8) +
+  geom_vline(xintercept = 0, size=0.8) +
+  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  coord_fixed(ratio=1) +
+  labs(
+    x = "Anteil Kunde in der jew. Klasse (in %)",
+    y = "Anteil Umsatz in der jew. Klasse (in %)"
+  )
+```
+
+
+```{r echo=FALSE}
+abc_analyse_kunde_nach_umsatz %>%
+  mutate(anteil_kunde_kumuliert = row_number()/n()) %>%
+  ggplot() +
+  geom_line(mapping = aes(x=anteil_kunde_kumuliert*100, y=anteil_umsatz_kumuliert*100, color=klasse)) +
+  geom_hline(yintercept = 0, size=0.8) +
+  geom_vline(xintercept = 0, size=0.8) +
+  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  # coord_cartesian() +
+  coord_fixed(ratio=1) +
+  labs(
+    title = "ABC-Analyse der Kunden nach dem Umsatz",
+    x = "Anteil Kunde (in %)",
+    y = "Anteil Umsatz (in %)"
+  )
+```
+
+```{r}
+abc_analyse_kunde_nach_umsatz %>% 
+  group_by(klasse) %>% 
+  summarise(anzahl = n()) %>% 
+  ggplot() +
+  geom_col(mapping = aes(x=klasse, y=anzahl)) +
+  geom_text(mapping = aes(x=klasse, y=anzahl, label=anzahl), vjust=-0.5, color="black") +
+  # geom_text(mapping = aes(x=klasse, y=anzahl, label="bzw."), vjust=3.5, color="white") +
+  geom_text(mapping = aes(x=klasse, y=anzahl, label=glue("{round(anzahl/sum(anzahl)*100, digits = 1)} %")), vjust=1.5, color="3FF") +
+  labs(
+    x = "Klasse",
+    y = "Anzahl Kunden"
+  )
+```
 
 
 
