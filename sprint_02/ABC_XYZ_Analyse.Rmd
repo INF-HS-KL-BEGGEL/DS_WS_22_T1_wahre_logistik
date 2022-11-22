@@ -159,7 +159,7 @@ abc_analyse_nach_zugriffen %>%
 
 ## Material nach Umsatz (ABC-Material)
 ```{r include=FALSE}
-abc_analyse_nach_umsatz <- verkaeufe %>% 
+abc_analyse_material_nach_umsatz <- verkaeufe %>% 
   group_by(materialnummer) %>% 
   summarise(umsatz = sum(vk_preis_num)) %>% 
   abc_analyse(column = umsatz, thresholds = c(0.4, 0.8, 0.96, 0.99)) %>% 
@@ -168,7 +168,7 @@ abc_analyse_nach_umsatz <- verkaeufe %>%
 
 
 ```{r echo=FALSE}
-abc_analyse_nach_umsatz %>% 
+abc_analyse_material_nach_umsatz %>% 
   mutate(anteil_artikel = row_number()/n()) %>% 
   ggplot() +
   geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_umsatz_kumuliert*100, color=klasse)) +
@@ -186,7 +186,7 @@ abc_analyse_nach_umsatz %>%
 ```
 
 ```{r echo=FALSE}
-abc_analyse_nach_umsatz %>% 
+abc_analyse_material_nach_umsatz %>% 
   group_by(klasse) %>% 
   mutate(anteil_artikel_in_klasse = row_number()/n(), anteil_umsatz_kumuliert_in_klasse = cumsum(anteil_umsatz)/sum(anteil_umsatz)) %>% 
   ggplot() +
@@ -199,24 +199,38 @@ abc_analyse_nach_umsatz %>%
     y = "Anteil am Umsatz (in der jew. Klasse)"
   )
 ```
+```{r echo=FALSE}
+abc_analyse_material_nach_umsatz %>% 
+  group_by(klasse) %>% 
+  summarise(anzahl = n()) %>% 
+  ggplot() +
+  geom_col(mapping = aes(x=klasse, y=anzahl)) +
+  geom_text(mapping = aes(x=klasse, y=anzahl, label=anzahl), vjust=-0.5, color="black") +
+  # geom_text(mapping = aes(x=klasse, y=anzahl, label="bzw."), vjust=3.5, color="white") +
+  geom_text(mapping = aes(x=klasse, y=anzahl, label=glue("{round(anzahl/sum(anzahl)*100, digits = 1)} %")), vjust=1.5, color="3FF") +
+  labs(
+    x = "Klasse",
+    y = "Anzahl Artikel"
+  )
+```
 
 
 
 
 ```{r include=FALSE}
-# x_B <- abc_analyse_nach_umsatz %>% 
+# x_B <- abc_analyse_material_nach_umsatz %>% 
 #   filter(klasse == "B") %>% 
 #   arrange(rang) %>%
 #   head(1) %>% 
 #   pull("anteil_artikel")
 # 
-# x_C <- abc_analyse_nach_umsatz %>% 
+# x_C <- abc_analyse_material_nach_umsatz %>% 
 #   filter(klasse == "C") %>% 
 #   arrange(rang) %>%
 #   head(1) %>% 
 #   pull("anteil_artikel")
 #    
-# abc_analyse_nach_umsatz %>% 
+# abc_analyse_material_nach_umsatz %>% 
 #   ggplot() +
 #   geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_umsatz_kumuliert*100, color=klasse)) +
 #   geom_hline(yintercept = 0, size=0.8) + 
@@ -330,7 +344,7 @@ abc_analyse_kunde_nach_umsatz %>%
   )
 ```
 
-```{r}
+```{r echo=FALSE}
 abc_analyse_kunde_nach_umsatz %>% 
   group_by(klasse) %>% 
   summarise(anzahl = n()) %>% 
