@@ -1,0 +1,91 @@
+---
+title: "Clustering"
+output: html_notebook
+---
+
+# Datenbankverbindung aufbauen
+
+```{r message=FALSE, warning=FALSE}
+library(DBI)
+library(dplyr)
+library(odbc)
+library(lubridate)
+library(tidyverse)
+library(leaflet)
+library(factoextra)
+
+
+
+
+library(cluster)
+
+
+library(tidyverse)
+library(readxl)
+library(FactoMineR)
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+```{r}
+con <- dbConnect(drv=RPostgres::Postgres(),
+                 dbname=Sys.getenv("dbname"),
+                 host=Sys.getenv("host"),
+                 port=Sys.getenv("port"),
+                 password=Sys.getenv("password"),
+                 user=Sys.getenv("user"))
+```
+
+```{r}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),#"PostgreSQL Unicode",
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+# Clustering
+
+```{r}
+lieferscheine <- dbGetQuery(conn=con, statement = "select lieferschein, kunde from verkaeufe Group By lieferschein, kunde Order By lieferschein")
+lieferscheine
+lieferscheine_split <- lieferscheine[1:50, ]
+#skalieren Sie jede Variable auf einen Mittelwert von 0 und einer Standardabweichung von 1
+#lieferscheine_split <- scale(lieferscheine_split)
+lieferscheine_split
+```
+
+```{r}
+# Set seed
+set.seed(1234)
+
+# Cluster Analysis - kmeans
+kmeans_basic <- kmeans(lieferscheine_split, centers = 5)
+kmeans_basic_table <- data.frame(kmeans_basic$size, kmeans_basic$centers)
+kmeans_basic_df <- data.frame(Cluster = kmeans_basic$cluster, lieferscheine_split)
+kmeans_basic_df
+kmeans_basic_table
+kmeans_basic
+# head of df
+```
+
+```{r}
+# Example ggplot
+ggplot(data = kmeans_basic_df, aes(y = Cluster),palette="YIGn") +
+  geom_bar(aes(fill = kunde)) +
+  ggtitle("Count of Clusters by Kunde") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+kmeans(lieferscheine_split, 5)
+#fviz_nbclust(lieferscheine_split, 5, method = "wss") #overkill for RAM
+```
+
+
+
+# Datenbankverbindung beenden
+```{r}
+dbDisconnect(con)
+```
