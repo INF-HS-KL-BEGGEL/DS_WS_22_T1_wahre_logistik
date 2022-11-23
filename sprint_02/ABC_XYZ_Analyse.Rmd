@@ -30,7 +30,8 @@ con <- DBI::dbConnect(odbc::odbc(),
                       Database = Sys.getenv("dbname"),
                       UID      = Sys.getenv("user"),
                       PWD      = Sys.getenv("password"),
-                      Port     = Sys.getenv("port"))```
+                      Port     = Sys.getenv("port"))
+```
 
 ```{r include=FALSE}
 get_table_as_tibble <- function(connection, table_name){
