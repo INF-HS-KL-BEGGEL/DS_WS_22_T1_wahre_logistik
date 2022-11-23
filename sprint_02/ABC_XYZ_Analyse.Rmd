@@ -237,7 +237,7 @@ abc_analyse_nach_umsatz %>%
 
 
 
-## Nach Summe von Abgang
+## Material nach Summe von Abgang
 ```{r include=FALSE}
 abc_analyse_nach_abgang <- verkaeufe %>% 
   select(materialnummer, abgang) %>% 
@@ -284,6 +284,66 @@ abc_analyse_nach_abgang %>%
   )
 ```
 
+## Kunden nach Umsatz
+```{r include=FALSE}
+abc_analyse_kunde_nach_umsatz <- verkaeufe %>% 
+  group_by(kunde) %>% 
+  summarise(umsatz = sum(vk_preis_num)) %>% 
+  abc_analyse(column = umsatz, thresholds = c(0.4, 0.8, 0.96, 0.99)) %>% 
+  rename(anteil_umsatz = anteil, anteil_umsatz_kumuliert = anteil_kumuliert)
+```
+
+```{r echo=FALSE}
+abc_analyse_kunde_nach_umsatz %>% 
+  group_by(klasse) %>% 
+  mutate(anteil_kunde_kumuliert_in_klasse = row_number()/n(), anteil_umsatz_kumuliert_in_klasse = cumsum(anteil_umsatz)/sum(anteil_umsatz)) %>%
+  ggplot() +
+  geom_line(mapping = aes(x=anteil_kunde_kumuliert_in_klasse*100, y=anteil_umsatz_kumuliert_in_klasse*100), color="blue") +
+  facet_wrap(~klasse) + 
+  geom_hline(yintercept = 0, size=0.8) +
+  geom_vline(xintercept = 0, size=0.8) +
+  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  coord_fixed(ratio=1) +
+  labs(
+    x = "Anteil Kunde in der jew. Klasse (in %)",
+    y = "Anteil Umsatz in der jew. Klasse (in %)"
+  )
+```
+
+
+```{r echo=FALSE}
+abc_analyse_kunde_nach_umsatz %>%
+  mutate(anteil_kunde_kumuliert = row_number()/n()) %>%
+  ggplot() +
+  geom_line(mapping = aes(x=anteil_kunde_kumuliert*100, y=anteil_umsatz_kumuliert*100, color=klasse)) +
+  geom_hline(yintercept = 0, size=0.8) +
+  geom_vline(xintercept = 0, size=0.8) +
+  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  # coord_cartesian() +
+  coord_fixed(ratio=1) +
+  labs(
+    title = "ABC-Analyse der Kunden nach dem Umsatz",
+    x = "Anteil Kunde (in %)",
+    y = "Anteil Umsatz (in %)"
+  )
+```
+
+```{r}
+abc_analyse_kunde_nach_umsatz %>% 
+  group_by(klasse) %>% 
+  summarise(anzahl = n()) %>% 
+  ggplot() +
+  geom_col(mapping = aes(x=klasse, y=anzahl)) +
+  geom_text(mapping = aes(x=klasse, y=anzahl, label=anzahl), vjust=-0.5, color="black") +
+  # geom_text(mapping = aes(x=klasse, y=anzahl, label="bzw."), vjust=3.5, color="white") +
+  geom_text(mapping = aes(x=klasse, y=anzahl, label=glue("{round(anzahl/sum(anzahl)*100, digits = 1)} %")), vjust=1.5, color="3FF") +
+  labs(
+    x = "Klasse",
+    y = "Anzahl Kunden"
+  )
+```
 
 
 
@@ -296,169 +356,129 @@ Varianz = Summe von ((Abgang(Artikel) - Erwartungswert(Artikel)) zum Quadrat) / 
 Variationskoeffizient = Wurzel von (Varianz(Artikel)) / Erwartungswert(Artikel)
 [https://axel-schroeder.de/xyz-analyse-optimale-materialwirtschaft-schritt-fuer-schritt-fallstricke-beispieldateien/]
 
-```{r inlude=FALSE}
-#Vorbereitung
+
+###Vorbereitungen
+```{r}
+#setzen des Zeitintervalls ("week"/"month")
+timeIntervall <- "month"
+
 #ermittle die gesamt Häufigkeit an Bestellungen pro Artikel
 Bestellungen <- dbGetQuery(conn=con, statement = "SELECT materialnummer, lieferschein From verkaeufe Group By lieferschein, materialnummer")
+#<-Bestellungen[Bestellungen$amount > 1, ] %>% arrange(desc(amount))
 Bestellungen <- Bestellungen %>% ungroup() %>% group_by(materialnummer) %>% summarize(lieferscheine=n()) %>% arrange(desc(lieferscheine))
 Bestellungen
-```
 
-```{r inlude=FALSE}
-#Vorbereitung
 #ermitlle den Abgang pro Produkt und Zeitintervall ("week"/"month")
-queryStringForWeeks <-"SELECT DATE_PART('week',datum) as woche, materialnummer, sum(abgang) as abgangProWoche From verkaeufe Group By woche, materialnummer"
-queryStringForMonths <-"SELECT DATE_PART('month',datum) as monat, materialnummer, sum(abgang) as abgangProMonat From verkaeufe Group By monat, materialnummer"
+queryString <-paste("SELECT DATE_PART('",timeIntervall, sep="")
+queryString <-paste(queryString,"',datum) as intervall", sep="")
+queryString <-paste(queryString,", materialnummer, sum(abgang) as abgangProIntervall", sep="")
+queryString <-paste(queryString," From verkaeufe Group By intervall, materialnummer", sep="")
 
-abgangProWocheUndArtikel <- dbGetQuery(conn=con, statement = queryStringForWeeks)
-abgangProWocheUndArtikel
-abgangProMonatUndArtikel <- dbGetQuery(conn=con, statement = queryStringForMonths)
-abgangProMonatUndArtikel
-```
+abgangProIntervallUndArtikel <- dbGetQuery(conn=con, statement = queryString)
+abgangProIntervallUndArtikel
 
-```{r inlude=FALSE}
-#Vorbereitung
-#ermittle den Gesamt Abgang pro Woche und seperat pro Produkt
-abgangProWocheUndArtikel <- abgangProWocheUndArtikel %>% ungroup()
-abgangProMonatUndArtikel <- abgangProMonatUndArtikel %>% ungroup()
-
-nachMaterialnummern <- abgangProWocheUndArtikel %>% select(materialnummer,abgangprowoche) %>% group_by(materialnummer) %>% summarize(abgang_gesamt=sum(abgangprowoche))
-nachWochen <- abgangProWocheUndArtikel %>% select(woche,abgangprowoche) %>% group_by(woche) %>% summarize(abgang_gesamt=sum(abgangprowoche))
-nachMonaten <- abgangProMonatUndArtikel %>% select(monat,abgangpromonat) %>% group_by(monat) %>% summarize(abgang_gesamt=sum(abgangpromonat))
+#ermittle den Gesamt Abgang pro Zeitintervall und seperat pro Produkt
+abgangProIntervallUndArtikel <- abgangProIntervallUndArtikel %>% ungroup()
+nachMaterialnummern <- abgangProIntervallUndArtikel %>% select(materialnummer,abgangprointervall) %>% group_by(materialnummer) %>% summarize(abgang_gesamt=sum(abgangprointervall))
+nachIntervallen <- abgangProIntervallUndArtikel %>% select(intervall,abgangprointervall) %>% group_by(intervall) %>% summarize(abgang_gesamt=sum(abgangprointervall))
 nachMaterialnummern
-nachWochen
-nachMonaten
+nachIntervallen
 ```
 
 
 ### Erwartungswert
-```{r inlude=FALSE}
-#ermittle den Erwartungswert
-wochen<-nrow(nachWochen)
-monaten<-nrow(nachMonaten)
-ErwartungswertNachWochen <- nachMaterialnummern %>% ungroup() %>% mutate(erwartungswert=abgang_gesamt/wochen)
-ErwartungswertNachMonaten <- nachMaterialnummern %>% ungroup() %>% mutate(erwartungswert=abgang_gesamt/monaten)
-wochen
-monaten
-#ergänze den erwartungswert zur Tabelle vom Abgang pro Produkt und Monat bzw. Woche
-ErwartungswertNachWochen <- inner_join(x=abgangProWocheUndArtikel,y=ErwartungswertNachWochen,by="materialnummer")
-ErwartungswertNachMonaten <- inner_join(x=abgangProMonatUndArtikel,y=ErwartungswertNachMonaten,by="materialnummer")
-ErwartungswertNachWochen
-ErwartungswertNachMonaten
+```{r}
+#ermittle den Erwartungswert und die Menge an Monats Einträgen - offensichtlich 12
+intervalle<-nrow(nachIntervallen)
+AbgangMittelwert <- nachMaterialnummern %>% ungroup() %>% mutate(erwartungswert=abgang_gesamt/intervalle)
+intervalle
+#ergänze den erwartungswert zur Tabelle vom Abgang pro Produkt und Monat
+AbgangMittelwert <- inner_join(x=abgangProIntervallUndArtikel,y=AbgangMittelwert,by="materialnummer")
+AbgangMittelwert
 ```
 
 
 ### Varianz
 
-```{r inlude=FALSE}
+```{r}
 #dies stellt nur einen  Rechen Zwischenschritt dar für die Berechnung der Varianz
-#week
-AbgangVarianzNachWochen <- mutate(ErwartungswertNachWochen, abgang_minus_erwartungswert_zum_quadrat = ((abgangprowoche-erwartungswert)**2))
-AbgangVarianzNachWochen <- AbgangVarianzNachWochen %>% ungroup()
-#month
-AbgangVarianzNachMonaten <- mutate(ErwartungswertNachMonaten, abgang_minus_erwartungswert_zum_quadrat = ((abgangpromonat-erwartungswert)**2))
-AbgangVarianzNachMonaten <- AbgangVarianzNachMonaten %>% ungroup()
+AbgangVarianz <- mutate(AbgangMittelwert, abgang_minus_erwartungswert_zum_quadrat = ((abgangprointervall-erwartungswert)**2))
+AbgangVarianz <- AbgangVarianz %>% ungroup()
 #ermittle die Varianz
-#week
-AbgangVarianzNachWochen <- AbgangVarianzNachWochenZwischenschritt %>% group_by(materialnummer) %>% select(materialnummer,erwartungswert,abgang_minus_erwartungswert_zum_quadrat) %>%  summarize(varianz=sum(abgang_minus_erwartungswert_zum_quadrat)/wochen)
-#month
-AbgangVarianzNachMonaten <- AbgangVarianzNachMonatenZwischenschritt %>% select(materialnummer,erwartungswert,abgang_minus_erwartungswert_zum_quadrat) %>% group_by(materialnummer) %>% summarize(varianz=sum(abgang_minus_erwartungswert_zum_quadrat)/monaten)
+AbgangVarianz <- AbgangVarianz %>% select(materialnummer,erwartungswert,abgang_minus_erwartungswert_zum_quadrat) %>% group_by(materialnummer) %>% summarize(varianz=sum(abgang_minus_erwartungswert_zum_quadrat)/intervalle)
 
-AbgangVarianzNachWochen
-AbgangVarianzNachMonaten
+AbgangVarianz
 ```
 
 
 
-```{r inlude=FALSE}
+```{r}
 #ermittle die Standardabweichung
-#week
-AbgangStandardabweichungNachWochen <- AbgangVarianzNachWochen %>% mutate(standardabweichung=sqrt(varianz))
-joinVector <- ErwartungswertNachWochen %>% select(materialnummer,erwartungswert) %>% arrange(materialnummer) %>% distinct()
-AbgangStandardabweichungNachWochen <- inner_join(x=AbgangStandardabweichungNachWochen,y=joinVector,by="materialnummer")
-AbgangStandardabweichungNachWochen
-#month
-AbgangStandardabweichungNachMonaten <- AbgangVarianzNachMonaten %>% mutate(standardabweichung=sqrt(varianz))
-joinVector <- ErwartungswertNachMonaten %>% select(materialnummer,erwartungswert) %>% arrange(materialnummer) %>% distinct()
-AbgangStandardabweichungNachMonaten <- inner_join(x=AbgangStandardabweichungNachMonaten,y=joinVector,by="materialnummer")
-AbgangStandardabweichungNachMonaten
+AbgangStandardabweichung <- AbgangVarianz %>% mutate(standardabweichung=sqrt(varianz))
+joinVector <- AbgangMittelwert %>% select(materialnummer,erwartungswert) %>% arrange(materialnummer) %>% distinct()
+AbgangStandardabweichung <- inner_join(x=AbgangStandardabweichung,y=joinVector,by="materialnummer")
+AbgangStandardabweichung
 ```
 
 
 ### Variationskoeffizient
 
-```{r inlude=FALSE}
+```{r}
 #AbgangVarianzkoeffizient
-#week
-VariationskoeffizientNachWochen <- mutate(AbgangStandardabweichungNachWochen, Variationskoeffizient = (standardabweichung/erwartungswert)*100)
-VariationskoeffizientNachWochen
-#month
-VariationskoeffizientNachMonaten <- mutate(AbgangStandardabweichungNachMonaten, Variationskoeffizient = (standardabweichung/erwartungswert)*100)
-VariationskoeffizientNachMonaten
+Variationskoeffizient <- mutate(AbgangStandardabweichung, Variationskoeffizient = (standardabweichung/erwartungswert)*100)
+Variationskoeffizient
 ```
 
 ### Artikelanteil, Klassifizierung, Zählung aller Bestellungen
-```{r inlude=FALSE}
-#week
+```{r}
 #ergänzen des gesamten Abgangs und der menge an Bestellungen
-VariationskoeffizientNachWochen <- inner_join(x=VariationskoeffizientNachWochen,y=nachMaterialnummern,by="materialnummer")
-VariationskoeffizientNachWochen <- inner_join(x=VariationskoeffizientNachWochen,y=Bestellungen,by="materialnummer")
+Variationskoeffizient <- inner_join(x=Variationskoeffizient,y=nachMaterialnummern,by="materialnummer")
+Variationskoeffizient <- inner_join(x=Variationskoeffizient,y=Bestellungen,by="materialnummer")
 #sortieren
-VariationskoeffizientNachWochen <- VariationskoeffizientNachWochen %>% arrange(Variationskoeffizient) 
+Variationskoeffizient <- Variationskoeffizient %>% arrange(Variationskoeffizient) 
 #ermitteln des artikel anteils
-VariationskoeffizientNachWochen <- VariationskoeffizientNachWochen %>% ungroup()%>% mutate(anteil_artikel=row_number()/n())
+Variationskoeffizient <- Variationskoeffizient %>% ungroup()%>% mutate(anteil_artikel=row_number()/n())
 #get max and min values of Variationskoeffizient
-maximum <- max(VariationskoeffizientNachWochen$Variationskoeffizient)
-minimum <- min(VariationskoeffizientNachWochen$Variationskoeffizient)
+maximum <- max(Variationskoeffizient$Variationskoeffizient)
+maximum
+minimum <- min(Variationskoeffizient$Variationskoeffizient)
+minimum
 prozentualTeil <-maximum/100
 
 # Klassifizierung
-VariationskoeffizientNachWochen <- VariationskoeffizientNachWochen %>% mutate(klasse= 
+Variationskoeffizient <- Variationskoeffizient %>% mutate(klasse= 
                                                                         case_when(
+                                                                          Variationskoeffizient<=50 ~ "V",
                                                                           Variationskoeffizient<=100 ~ "W",
-                                                                          Variationskoeffizient<=175 ~ "X",
-                                                                          Variationskoeffizient<=390 ~ "Y",
+                                                                          Variationskoeffizient<=200 ~ "X",
+                                                                          lieferscheine<=3 ~ "Y",
                                                                           TRUE ~ "Z"
-                                                                        ))
-#month
-#ergänzen des gesamten Abgangs und der menge an Bestellungen
-VariationskoeffizientNachMonaten <- inner_join(x=VariationskoeffizientNachMonaten,y=nachMaterialnummern,by="materialnummer")
-VariationskoeffizientNachMonaten <- inner_join(x=VariationskoeffizientNachMonaten,y=Bestellungen,by="materialnummer")
-#sortieren
-VariationskoeffizientNachMonaten <- VariationskoeffizientNachMonaten %>% arrange(Variationskoeffizient) 
-#ermitteln des artikel anteils
-VariationskoeffizientNachMonaten <- VariationskoeffizientNachMonaten %>% ungroup()%>% mutate(anteil_artikel=row_number()/n())
-#get max and min values of Variationskoeffizient
-maximum <- max(VariationskoeffizientNachMonaten$Variationskoeffizient)
-minimum <- min(VariationskoeffizientNachMonaten$Variationskoeffizient)
-prozentualTeil <-maximum/100
-
-# Klassifizierung
-VariationskoeffizientNachMonaten <- VariationskoeffizientNachMonaten %>% mutate(klasse= 
-                                                                        case_when(
-                                                                          Variationskoeffizient<=50 ~ "W",
-                                                                          Variationskoeffizient<=80 ~ "X",
-                                                                          Variationskoeffizient<=200 ~ "Y",
-                                                                          TRUE ~ "Z"
-                                                                        ))
-
-
-VariationskoeffizientNachWochen
-VariationskoeffizientNachMonaten
+                                                                        ))#Variationskoeffizient/prozentualTeil
+Variationskoeffizient
 ```
 
 
 ### Plot
 
-## Klasse-Z im Vergleich zu einmaligen Verkäufen
-```{r echo=FALSE}
-# plot only last class together with lieferscheine==1
-subsetOfVariationskoeffizient <- select(VariationskoeffizientNachMonaten,Variationskoeffizient,anteil_artikel,klasse)
-subsetOfVariationskoeffizient <- subsetOfVariationskoeffizient %>% filter(klasse=="Z")
-minimumAnteil <- min(subsetOfVariationskoeffizient$anteil_artikel)
-subsetOfVariationskoeffizient %>% 
+```{r}
+#plot all xyz Values
+x_B <- Variationskoeffizient %>% 
+  filter(klasse == "X") %>% 
+  arrange(Variationskoeffizient) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
+
+x_C <- Variationskoeffizient %>% 
+  filter(klasse == "Y") %>% 
+  arrange(Variationskoeffizient) %>%
+  head(1) %>% 
+  pull("anteil_artikel")
+
+
+
+Variationskoeffizient %>% 
   ggplot() +
-  geom_line(mapping = aes(x=(anteil_artikel-minimumAnteil)*100, y=Variationskoeffizient, color=klasse),size=1) +
+  geom_line(mapping = aes(x=anteil_artikel*100, y=Variationskoeffizient, color=klasse)) +
   geom_hline(yintercept = 0, size=0.8) + 
   geom_vline(xintercept = 0, size=0.8) +
   scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits = 0)) +
@@ -466,61 +486,9 @@ subsetOfVariationskoeffizient %>%
   coord_fixed(ratio = 0.3) +
   labs(
     x = "Anteil Artikel (in %)", 
-    y = "Variationskoeffizient (in %)",
+    y = "Variationskoeffizient",
     color = "Klasse",
-    title = "Betrachtung der Z-Klasse"
-  )
-subsetOfVariationskoeffizient <- select(VariationskoeffizientNachMonaten,Variationskoeffizient,anteil_artikel,klasse,lieferscheine)
-subsetOfVariationskoeffizient <- subsetOfVariationskoeffizient[subsetOfVariationskoeffizient$lieferscheine == 1, ]
-subsetOfVariationskoeffizient %>% 
-  ggplot() +
-  geom_line(mapping = aes(x=(anteil_artikel-minimumAnteil)*100, y=Variationskoeffizient, color=klasse),size=1) +
-  geom_hline(yintercept = 0, size=0.8) + 
-  geom_vline(xintercept = 0, size=0.8) +
-  scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits = 0)) +
-  scale_y_continuous(breaks = seq(from=0, to=1200, by=50)) +
-  coord_fixed(ratio = 0.3) +
-  labs(
-    x = "Anteil Artikel (in %)", 
-    y = "Variationskoeffizient (in %)",
-    color = "Klasse",
-    title = "exakt eine Bestellung des Materials"
-  )
-```
-
-## Verifikationskoeffizient nach allen Klassen
-
-```{r echo=FALSE}
-#week
-#plot all xyz Values
-VariationskoeffizientNachWochen %>% 
-  ggplot() +
-  geom_line(mapping = aes(x=anteil_artikel*100, y=Variationskoeffizient, color=klasse),size=1) +
-  geom_hline(yintercept = 0, size=0.8) + 
-  geom_vline(xintercept = 0, size=0.8) +
-  scale_y_continuous(breaks = seq(from=0, to=1200, by=50)) +
-  coord_fixed(ratio = 0.07) +
-  labs(
-    x = "Anteil Artikel (in %)", 
-    y = "Variationskoeffizient (in %)",
-    color = "Klasse",
-    title = "XYZ-Analyse nach Abgängen in Wochen"
-  )
-
-#month
-#plot all xyz Values
-VariationskoeffizientNachMonaten %>% 
-  ggplot() +
-  geom_line(mapping = aes(x=anteil_artikel*100, y=Variationskoeffizient, color=klasse),size=1) +
-  geom_hline(yintercept = 0, size=0.8) + 
-  geom_vline(xintercept = 0, size=0.8) +
-  scale_y_continuous(breaks = seq(from=0, to=1200, by=50)) +
-  coord_fixed(ratio = 0.3) +
-  labs(
-    x = "Anteil Artikel (in %)", 
-    y = "Variationskoeffizient (in %)",
-    color = "Klasse",
-    title = "XYZ-Analyse nach Abgängen in Monaten"
+    title = "XYZ-Analyse nach Abgängen"
   )
 ```
 
