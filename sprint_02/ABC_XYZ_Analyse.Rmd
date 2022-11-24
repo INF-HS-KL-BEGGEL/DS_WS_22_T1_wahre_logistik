@@ -356,7 +356,7 @@ Varianz = Summe von ((Abgang(Artikel) - Erwartungswert(Artikel)) zum Quadrat) / 
 Variationskoeffizient = Wurzel von (Varianz(Artikel)) / Erwartungswert(Artikel)
 [https://axel-schroeder.de/xyz-analyse-optimale-materialwirtschaft-schritt-fuer-schritt-fallstricke-beispieldateien/]
 
-```{r inlude=FALSE}
+```{r include=FALSE}
 #Vorbereitung
 #ermittle die gesamt Häufigkeit an Bestellungen pro Artikel
 Bestellungen <- dbGetQuery(conn=con, statement = "SELECT materialnummer, lieferschein From verkaeufe Group By lieferschein, materialnummer")
@@ -364,7 +364,7 @@ Bestellungen <- Bestellungen %>% ungroup() %>% group_by(materialnummer) %>% summ
 Bestellungen
 ```
 
-```{r inlude=FALSE}
+```{r include=FALSE}
 #Vorbereitung
 #ermitlle den Abgang pro Produkt und Zeitintervall ("week"/"month")
 queryStringForWeeks <-"SELECT DATE_PART('week',datum) as woche, materialnummer, sum(abgang) as abgangProWoche From verkaeufe Group By woche, materialnummer"
@@ -376,7 +376,7 @@ abgangProMonatUndArtikel <- dbGetQuery(conn=con, statement = queryStringForMonth
 abgangProMonatUndArtikel
 ```
 
-```{r inlude=FALSE}
+```{r include=FALSE}
 #Vorbereitung
 #ermittle den Gesamt Abgang pro Woche und seperat pro Produkt
 abgangProWocheUndArtikel <- abgangProWocheUndArtikel %>% ungroup()
@@ -394,7 +394,7 @@ nachMonaten
 
 
 ### Erwartungswert
-```{r inlude=FALSE}
+```{r include=FALSE}
 #ermittle den Erwartungswert
 wochen<-nrow(nachWochen)
 monaten<-nrow(nachMonaten)
@@ -412,7 +412,7 @@ ErwartungswertNachMonaten
 
 ### Varianz
 
-```{r inlude=FALSE}
+```{r include=FALSE}
 #dies stellt nur einen  Rechen Zwischenschritt dar für die Berechnung der Varianz
 #week
 AbgangVarianzNachWochen <- mutate(ErwartungswertNachWochen, abgang_minus_erwartungswert_zum_quadrat = ((abgangprowoche-erwartungswert)**2))
@@ -432,7 +432,7 @@ AbgangVarianzNachMonaten
 
 
 
-```{r inlude=FALSE}
+```{r include=FALSE}
 #ermittle die Standardabweichung
 #week
 AbgangStandardabweichungNachWochen <- AbgangVarianzNachWochen %>% mutate(standardabweichung=sqrt(varianz))
@@ -449,7 +449,7 @@ AbgangStandardabweichungNachMonaten
 
 ### Variationskoeffizient
 
-```{r inlude=FALSE}
+```{r include=FALSE}
 #AbgangVarianzkoeffizient
 #week
 VariationskoeffizientNachWochen <- mutate(AbgangStandardabweichungNachWochen, Variationskoeffizient = (standardabweichung/erwartungswert)*100)
@@ -460,7 +460,7 @@ VariationskoeffizientNachMonaten
 ```
 
 ### Artikelanteil, Klassifizierung, Zählung aller Bestellungen
-```{r inlude=FALSE}
+```{r include=FALSE}
 #week
 #ergänzen des gesamten Abgangs und der menge an Bestellungen
 VariationskoeffizientNachWochen <- inner_join(x=VariationskoeffizientNachWochen,y=nachMaterialnummern,by="materialnummer")
