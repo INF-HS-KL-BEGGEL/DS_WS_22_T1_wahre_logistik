@@ -377,31 +377,82 @@ abgangProMonatUndArtikel
 ```
 
 ```{r include=FALSE}
+#erstelle eine Liste aller Monate
+queryMonat <- "SELECT DATE_PART('month',datum) as monat From verkaeufe Group By monat"
+monthTable <- dbGetQuery(conn=con, statement = queryMonat)
+#erstelle eine Liste aller Wochen
+queryWeek <- "SELECT DATE_PART('week',datum) as woche From verkaeufe Group By woche"
+weekTable <- dbGetQuery(conn=con, statement = queryWeek)
+
+
+# Kreuzprodukt zwischen Monaten und Materialnummern
+materialienZuAllenMonaten <- crossing(monthTable,Bestellungen %>% select(materialnummer))
+materialienZuAllenMonaten <- materialienZuAllenMonaten %>% distinct()
+# Kreuzprodukt zwischen Wochen und Materialnummern
+materialienZuAllenWochen <- crossing(weekTable,Bestellungen %>% select(materialnummer))
+materialienZuAllenWochen <- materialienZuAllenWochen %>% distinct()
+
+# ergänze die Daten von abgangProWoche/MonatUndArtikel zum Kreuzprodukt
+abgangProMonatUndArtikel <- inner_join(x=materialienZuAllenMonaten,y=abgangProMonatUndArtikel,by="materialnummer") %>% distinct()
+abgangProWocheUndArtikel <- inner_join(x=materialienZuAllenWochen,y=abgangProWocheUndArtikel,by="materialnummer") 
+
+# setze den Abgang pro Monat auf 0, bei denen die beiden Monats Spalten identisch sind (Der Abgang bezieht sich nur auf einen Monat, in den anderen hat kein Abgang statt gefunden)
+#monat
+abgangProMonatUndArtikel
+abgangProMonatUndArtikel$abgangpromonat[abgangProMonatUndArtikel$monat.x != abgangProMonatUndArtikel$monat.y] <- 0
+abgangProMonatUndArtikel <- abgangProMonatUndArtikel %>% select(monat.x,materialnummer,abgangpromonat)
+abgangProMonatUndArtikel <- abgangProMonatUndArtikel %>% 
+  rename(
+    monat = monat.x
+    )
+
+#woche
+abgangProWocheUndArtikel$abgangprowoche[abgangProWocheUndArtikel$woche.x != abgangProWocheUndArtikel$woche.y] <- 0
+abgangProWocheUndArtikel <- abgangProWocheUndArtikel %>% select(woche.x,materialnummer,abgangprowoche)
+abgangProWocheUndArtikel <- abgangProWocheUndArtikel %>% 
+  rename(
+    woche = woche.x
+    )
+
+#Unerwünschte Werte aus dem Join entfernen (left, right, inner oder outer join... alle sind speziel in diesem Fall mit Overhead verbunden)
+abgangProMonatUndArtikel <- abgangProMonatUndArtikel %>% group_by(monat,materialnummer) %>% summarize(abgangpromonat=max(abgangpromonat))
+abgangProWocheUndArtikel <- abgangProWocheUndArtikel %>% group_by(woche,materialnummer) %>% summarize(abgangprowoche=max(abgangprowoche))
+
+#remove week 1 and 53
+abgangProWocheUndArtikel <- abgangProWocheUndArtikel[abgangProWocheUndArtikel$woche != 1, ]
+abgangProWocheUndArtikel <- abgangProWocheUndArtikel[abgangProWocheUndArtikel$woche != 53, ]
+
+abgangProMonatUndArtikel
+abgangProWocheUndArtikel
+```
+
+
+
+```{r include=FALSE}
 #Vorbereitung
-#ermittle den Gesamt Abgang pro Woche und seperat pro Produkt
+#ermittle den Gesamt Abgang pro Produkt
 abgangProWocheUndArtikel <- abgangProWocheUndArtikel %>% ungroup()
 abgangProMonatUndArtikel <- abgangProMonatUndArtikel %>% ungroup()
 
-nachMaterialnummern <- abgangProWocheUndArtikel %>% select(materialnummer,abgangprowoche) %>% group_by(materialnummer) %>% summarize(abgang_gesamt=sum(abgangprowoche))
-nachWochen <- abgangProWocheUndArtikel %>% select(woche,abgangprowoche) %>% group_by(woche) %>% summarize(abgang_gesamt=sum(abgangprowoche))
-nachWochen <- nachWochen[nachWochen$woche != 1, ]
-nachWochen <- nachWochen[nachWochen$woche != 53, ]
-nachMonaten <- abgangProMonatUndArtikel %>% select(monat,abgangpromonat) %>% group_by(monat) %>% summarize(abgang_gesamt=sum(abgangpromonat))
-nachMaterialnummern
-nachWochen
-nachMonaten
+#wird genutzt um den gesamt Abgang zu ermitteln pro Woche/Monat und damit später die Summe. Ist die nicht die selbe? Nein! - Deswegen hat 'Mattin' die Klasse 'nix', die aus Werten mit einer Division bei 0 resultieren. Denn die Wochen berücksichtigen nicht alle Wochen im Jahr! Manche Artikel werden nur in den ausgeschlossenen Wochen gekauft. Division by 0 - also bitte
+nachMaterialnummernProWoche <- abgangProWocheUndArtikel %>% select(materialnummer,abgangprowoche) %>% group_by(materialnummer) %>% summarize(abgang_gesamt=sum(abgangprowoche))
+nachMaterialnummernProMonat <- abgangProMonatUndArtikel %>% select(materialnummer,abgangpromonat) %>% group_by(materialnummer) %>% summarize(abgang_gesamt=sum(abgangpromonat))
+
+nachMaterialnummernProWoche
+nachMaterialnummernProMonat
 ```
 
 
 ### Erwartungswert
 ```{r include=FALSE}
 #ermittle den Erwartungswert
-wochen<-nrow(nachWochen)
-monaten<-nrow(nachMonaten)
-ErwartungswertNachWochen <- nachMaterialnummern %>% ungroup() %>% mutate(erwartungswert=abgang_gesamt/wochen)
-ErwartungswertNachMonaten <- nachMaterialnummern %>% ungroup() %>% mutate(erwartungswert=abgang_gesamt/monaten)
+wochen<-nrow(weekTable)
+monaten<-nrow(monthTable)
+ErwartungswertNachWochen <- nachMaterialnummernProWoche %>% ungroup() %>% mutate(erwartungswert=abgang_gesamt/wochen)
+ErwartungswertNachMonaten <- nachMaterialnummernProMonat %>% ungroup() %>% mutate(erwartungswert=abgang_gesamt/monaten)
 wochen
 monaten
+ErwartungswertNachMonaten
 #ergänze den erwartungswert zur Tabelle vom Abgang pro Produkt und Monat bzw. Woche
 ErwartungswertNachWochen <- inner_join(x=abgangProWocheUndArtikel,y=ErwartungswertNachWochen,by="materialnummer")
 ErwartungswertNachMonaten <- inner_join(x=abgangProMonatUndArtikel,y=ErwartungswertNachMonaten,by="materialnummer")
@@ -422,9 +473,9 @@ AbgangVarianzNachMonaten <- mutate(ErwartungswertNachMonaten, abgang_minus_erwar
 AbgangVarianzNachMonaten <- AbgangVarianzNachMonaten %>% ungroup()
 #ermittle die Varianz
 #week
-AbgangVarianzNachWochen <- AbgangVarianzNachWochenZwischenschritt %>% group_by(materialnummer) %>% select(materialnummer,erwartungswert,abgang_minus_erwartungswert_zum_quadrat) %>%  summarize(varianz=sum(abgang_minus_erwartungswert_zum_quadrat)/wochen)
+AbgangVarianzNachWochen <- AbgangVarianzNachWochen %>% group_by(materialnummer) %>% select(materialnummer,erwartungswert,abgang_minus_erwartungswert_zum_quadrat) %>%  summarize(varianz=sum(abgang_minus_erwartungswert_zum_quadrat)/wochen)
 #month
-AbgangVarianzNachMonaten <- AbgangVarianzNachMonatenZwischenschritt %>% select(materialnummer,erwartungswert,abgang_minus_erwartungswert_zum_quadrat) %>% group_by(materialnummer) %>% summarize(varianz=sum(abgang_minus_erwartungswert_zum_quadrat)/monaten)
+AbgangVarianzNachMonaten <- AbgangVarianzNachMonaten %>% select(materialnummer,erwartungswert,abgang_minus_erwartungswert_zum_quadrat) %>% group_by(materialnummer) %>% summarize(varianz=sum(abgang_minus_erwartungswert_zum_quadrat)/monaten)
 
 AbgangVarianzNachWochen
 AbgangVarianzNachMonaten
@@ -436,12 +487,17 @@ AbgangVarianzNachMonaten
 #ermittle die Standardabweichung
 #week
 AbgangStandardabweichungNachWochen <- AbgangVarianzNachWochen %>% mutate(standardabweichung=sqrt(varianz))
-joinVector <- ErwartungswertNachWochen %>% select(materialnummer,erwartungswert) %>% arrange(materialnummer) %>% distinct()
+AbgangStandardabweichungNachWochen
+joinVector <- ErwartungswertNachWochen %>% select(materialnummer,erwartungswert) %>% distinct()
+joinVector <- joinVector %>% arrange(materialnummer)
+joinVector
 AbgangStandardabweichungNachWochen <- inner_join(x=AbgangStandardabweichungNachWochen,y=joinVector,by="materialnummer")
 AbgangStandardabweichungNachWochen
 #month
 AbgangStandardabweichungNachMonaten <- AbgangVarianzNachMonaten %>% mutate(standardabweichung=sqrt(varianz))
-joinVector <- ErwartungswertNachMonaten %>% select(materialnummer,erwartungswert) %>% arrange(materialnummer) %>% distinct()
+joinVector <- ErwartungswertNachMonaten %>% select(materialnummer,erwartungswert) %>% distinct()
+joinVector <- joinVector %>% arrange(materialnummer)
+joinVector
 AbgangStandardabweichungNachMonaten <- inner_join(x=AbgangStandardabweichungNachMonaten,y=joinVector,by="materialnummer")
 AbgangStandardabweichungNachMonaten
 ```
@@ -479,7 +535,7 @@ VariationskoeffizientNachWochen <- VariationskoeffizientNachWochen %>% mutate(kl
                                                                         case_when(
                                                                           Variationskoeffizient<=100 ~ "W",
                                                                           Variationskoeffizient<=175 ~ "X",
-                                                                          Variationskoeffizient<=380 ~ "Y",
+                                                                          Variationskoeffizient<=400 ~ "Y",
                                                                           TRUE ~ "Z"
                                                                         ))
 #month
@@ -499,8 +555,8 @@ prozentualTeil <-maximum/100
 VariationskoeffizientNachMonaten <- VariationskoeffizientNachMonaten %>% mutate(klasse= 
                                                                         case_when(
                                                                           Variationskoeffizient<=50 ~ "W",
-                                                                          Variationskoeffizient<=80 ~ "X",
-                                                                          Variationskoeffizient<=200 ~ "Y",
+                                                                          Variationskoeffizient<=100 ~ "X",
+                                                                          Variationskoeffizient<=220 ~ "Y",
                                                                           TRUE ~ "Z"
                                                                         ))
 
@@ -523,7 +579,6 @@ subsetOfVariationskoeffizient %>%
   geom_line(mapping = aes(x=(anteil_artikel-minimumAnteil)*100, y=Variationskoeffizient, color=klasse),size=1) +
   geom_hline(yintercept = 0, size=0.8) + 
   geom_vline(xintercept = 0, size=0.8) +
-  scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits = 0)) +
   scale_y_continuous(breaks = seq(from=0, to=1200, by=50)) +
   coord_fixed(ratio = 0.3) +
   labs(
@@ -539,7 +594,6 @@ subsetOfVariationskoeffizient %>%
   geom_line(mapping = aes(x=(anteil_artikel-minimumAnteil)*100, y=Variationskoeffizient, color=klasse),size=1) +
   geom_hline(yintercept = 0, size=0.8) + 
   geom_vline(xintercept = 0, size=0.8) +
-  scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits = 0)) +
   scale_y_continuous(breaks = seq(from=0, to=1200, by=50)) +
   coord_fixed(ratio = 0.3) +
   labs(
