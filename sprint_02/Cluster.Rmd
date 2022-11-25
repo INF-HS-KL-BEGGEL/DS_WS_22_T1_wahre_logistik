@@ -3,8 +3,6 @@ title: "Clustering"
 output: html_notebook
 ---
 
-# Datenbankverbindung aufbauen
-
 ```{r message=FALSE, warning=FALSE}
 library(DBI)
 library(dplyr)
@@ -13,11 +11,6 @@ library(lubridate)
 library(tidyverse)
 library(leaflet)
 library(factoextra)
-
-
-
-
-library(cluster)
 
 
 library(tidyverse)
@@ -48,22 +41,48 @@ con <- DBI::dbConnect(odbc::odbc(),
 # Clustering
 
 ```{r}
-lieferscheine <- dbGetQuery(conn=con, statement = "select lieferschein, kunde from verkaeufe Group By lieferschein, kunde Order By lieferschein")
-lieferscheine
-lieferscheine_split <- lieferscheine[1:50, ]
-#skalieren Sie jede Variable auf einen Mittelwert von 0 und einer Standardabweichung von 1
-#lieferscheine_split <- scale(lieferscheine_split)
-lieferscheine_split
+#kunden mit jedem gekauften material
+materialProKunde <- dbGetQuery(conn=con, statement = "Select kunde, materialnummer From verkaeufe Order By kunde")
+onlyFans <- materialProKunde %>% select(kunde) %>% distinct()
+onlyMaterials <-  materialProKunde %>% select(materialnummer) %>% distinct()
+countOfFans <- nrow(onlyFans)
+materialProKunde
+onlyFans
+countOfFans
+onlyMaterials
 ```
 
 ```{r}
+#make materialnumer an numeric id; necessary for the kmeans alg.
+materialToID <- onlyMaterials %>% mutate(id=row_number())
+materialToID
+
+#add to 'materialProKunde'
+materialProKunde <- inner_join(x=materialProKunde, y=materialToID, by="materialnummer")
+materialProKunde
+
+#remove material number as its no umeric value, which is necassary for kmeans
+mIDproKunde <- materialProKunde %>% select(kunde, id)
+mIDproKunde
+
+```
+
+
+```{r}
+mIDProKunde_split <- mIDproKunde %>% drop_na() # sicher ist sicher
+mIDProKunde_split
+```
+
+
+```{r}
+#basic kmeans
 # Set seed
 set.seed(1234)
 
 # Cluster Analysis - kmeans
-kmeans_basic <- kmeans(lieferscheine_split, centers = 5)
+kmeans_basic <- kmeans(mIDproKunde, centers = 5)
 kmeans_basic_table <- data.frame(kmeans_basic$size, kmeans_basic$centers)
-kmeans_basic_df <- data.frame(Cluster = kmeans_basic$cluster, lieferscheine_split)
+kmeans_basic_df <- data.frame(Cluster = kmeans_basic$cluster, mIDproKunde)
 kmeans_basic_df
 kmeans_basic_table
 kmeans_basic
@@ -79,10 +98,31 @@ ggplot(data = kmeans_basic_df, aes(y = Cluster),palette="YIGn") +
 ```
 
 ```{r}
-kmeans(lieferscheine_split, 5)
-#fviz_nbclust(lieferscheine_split, 5, method = "wss") #overkill for RAM
+# Fancy K-Means
+#we cut a few out of the table for this analysis [1:5000, ], else the function wont operate cause to a to big memory usage
+fviz_nbclust(mIDproKunde[1:5000, ], kmeans, nstart=100, method = "wss")
+```
+```{r}
+# Fancy K-Means
+kmeans_fancy <- kmeans(mIDproKunde, 5, nstart = 100)
+kmeans_fancy
+# plot the clusters
+fviz_cluster(kmeans_fancy, data = mIDproKunde, geom = c("point"),ellipse.type = "convex")
 ```
 
+```{r}
+# Fancy K-Means
+print(kmeans_fancy$centers)
+final_data <- cbind(mIDproKunde, cluster = kmeans_fancy$cluster)
+final_data
+```
+```{r}
+# Example ggplot
+ggplot(data = data.frame(Cluster = kmeans_fancy$cluster, mIDproKunde), aes(y = Cluster),palette="YIGn") +
+  geom_bar(aes(fill = kunde)) +
+  ggtitle("Count of Clusters by Kunde") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
 
 
 # Datenbankverbindung beenden
