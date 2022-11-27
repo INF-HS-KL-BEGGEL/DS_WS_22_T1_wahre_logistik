@@ -39,9 +39,10 @@ con <- DBI::dbConnect(odbc::odbc(),
 ```
 
 # Clustering
+Es wird ein Clustering unterschiedlicher Daten mit dem K-Means Algorithums vorgenommen.
 
-```{r}
-#kunden mit jedem gekauften material
+```{r include=FALSE}
+#customer wth every material
 materialProKunde <- dbGetQuery(conn=con, statement = "Select kunde, materialnummer From verkaeufe Order By kunde")
 onlyFans <- materialProKunde %>% select(kunde) %>% distinct()
 onlyMaterials <-  materialProKunde %>% select(materialnummer) %>% distinct()
@@ -51,6 +52,110 @@ onlyFans
 countOfFans
 onlyMaterials
 ```
+
+```{r include=FALSE}
+#customers with retail value and amount of orders
+käufeProKunde <- dbGetQuery(conn=con, statement = "Select kunde, lieferschein, sum(vk_preis_num) as verkaufswert From verkaeufe Where DATE_PART('week',datum) !=1 OR DATE_PART('week',datum) !=53 Group By kunde,lieferschein")
+käufeProKunde <- käufeProKunde %>% ungroup()
+käufeProKunde <- käufeProKunde %>% group_by(kunde) %>% summarize(bestellungen=n(), verkaufswert=sum(verkaufswert)) %>% arrange(desc(verkaufswert))
+
+
+#scaled table
+käufeProKunde <- käufeProKunde %>% mutate(kunde_sc=scale(kunde), bestellungen_sc=scale(bestellungen), verkaufswert_sc=scale(verkaufswert))
+käufeProKunde_scaled <- käufeProKunde %>% select(kunde_sc, bestellungen_sc, verkaufswert_sc)
+
+
+käufeProKunde_scaled
+käufeProKunde
+```
+
+## Kundengruppen nach Bestellhäufigkeit und Verkaufswert
+
+Beim Clustering mit K-means stellt sich zunächst die Frage, wie viele Cluster gebildet werden sollen. Die Menge der Cluster wird nicht vom Clustering Algorithmus slebst berechnet und stellt stattdessen einen Parameter für diesen dar. Um besser entscheiden zu können, wie viele Cluster sinnvoll wären, wird eine Methode zur Cluster Validierung genutzt - Ellbow Method.
+Die resultierende Kurve sinkt asymptopisch ab. Hirbei wird der Punkt als optimale Cluster Anzahl betrachtet, bei dem die Kurve beginnt sich abzuflachen.
+Daraus schließen wir die eine Clustermenge von 4.
+
+```{r echo=FALSE}
+# Fancy K-Means
+#we cut a few out of the table for this analysis [1:5000, ], else the function wont operate cause to a to big memory usage
+fviz_nbclust(käufeProKunde_scaled %>% select(bestellungen_sc,verkaufswert_sc), kmeans, nstart=100, method = "wss")
+```
+
+Das Ergebnis des Clustering sieht aus wie folgt:
+
+```{r echo=FALSE}
+# Fancy K-Means
+kmeans_fancy <- kmeans(käufeProKunde_scaled %>% select(bestellungen_sc,verkaufswert_sc), 4, nstart = 100)
+kmeans_fancy
+# plot the clusters
+fviz_cluster(kmeans_fancy, data = käufeProKunde_scaled %>% select(bestellungen_sc,verkaufswert_sc), geom = c("point"),ellipse.type = "convex")
+```
+
+
+```{r include=FALSE}
+#add the results to the primary table
+final_data <- cbind(käufeProKunde, cluster = kmeans_fancy$cluster)
+final_data
+```
+
+Wir ordnen die Cluster nach ihrer Größe und es wird auffällig, dass die Gruppe 4 mit weitem Abstand die Dominanteste ist und damit die meisten Kunden zu ihr gehören.
+
+```{r echo=FALSE}
+#Bar diagramm for total and rel. retail value per cluster
+ggplot(sumOfClusters %>% select(cluster,kunden), aes(x=cluster, y=kunden)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=kunden), vjust=-0.3, size=3.5)+
+  theme_minimal()
+```
+
+
+```{r include=FALSE}
+#get the summarised values for each cluster
+sumOfClusters <- final_data %>% select(cluster,verkaufswert,bestellungen)
+meanVerkaufswert <- mean(sumOfClusters$verkaufswert)
+meanBestellungen <- mean(sumOfClusters$bestellungen)
+amountVerkaufswert <- length(sumOfClusters$verkaufswert)
+amountBestellungen <- length(sumOfClusters$bestellungen)
+sumVerkaufswert <- sum(sumOfClusters$verkaufswert)
+sumBestellungen <- sum(sumOfClusters$bestellungen)
+  
+sumOfClusters <- sumOfClusters %>% group_by(cluster) %>% summarize(
+  verkaufswertDesClusters=sum(verkaufswert),
+  verkaufswert_rel=verkaufswertDesClusters/(sumVerkaufswert/100),
+  verkaufswert_avg_imCluster=mean(verkaufswert),
+  bestellungenDesClusters=sum(bestellungen),
+  bestellungen_rel=bestellungenDesClusters/(sumBestellungen/100),
+  bestellungen_avg_imCluster=mean(bestellungen),
+  kunden=n())
+sumOfClusters
+#final_data
+```
+
+
+```{r echo=FALSE}
+#Bar diagramm for total and rel. retail value per cluster
+ggplot(sumOfClusters %>% select(cluster,verkaufswertDesClusters,verkaufswert_rel), aes(x=cluster, y=verkaufswertDesClusters)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=paste(as.character(round(verkaufswert_rel, digits = 2)),"%")), vjust=+3, size=3.5)+
+  geom_text(aes(label=verkaufswertDesClusters), vjust=+1.3, size=3.5)+
+  theme_minimal()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ```{r}
 #make materialnumer an numeric id; necessary for the kmeans alg.
@@ -64,7 +169,6 @@ materialProKunde
 #remove material number as its no umeric value, which is necassary for kmeans
 mIDproKunde <- materialProKunde %>% select(kunde, id)
 mIDproKunde
-
 ```
 
 
