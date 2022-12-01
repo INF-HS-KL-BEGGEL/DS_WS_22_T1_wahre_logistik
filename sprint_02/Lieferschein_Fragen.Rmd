@@ -31,15 +31,13 @@ con <- DBI::dbConnect(odbc::odbc(),
                       Port     = Sys.getenv("port"))
 ```
 
-# Lieferschein Zusatzfragen
-
-## Lieferscheine mit nur einer Position
-
-
+# Lade Verkäufe
 ```{r}
 vk <- dbGetQuery(conn=con, statement = "select * from verkaeufe")
 ```
 
+# Lieferschein Zusatzfragen
+## Lieferscheine mit nur einer Position
 ```{r}
 unique_lieferscheine <- vk %>% group_by(lieferschein) %>% summarise(anzahl=n(), lf_sum_umsatz=sum(vk_preis_num), lf_sum_abgang=sum(abgang)) %>% filter(anzahl == 1)
 ```
@@ -59,6 +57,17 @@ SELECT SUM(vk_preis_num) AS Gesamtumsatz FROM verkaeufe WHERE lieferschein IN (S
 SELECT SUM(abgang) AS Gesamtabgaenge FROM verkaeufe WHERE lieferschein IN (SELECT lieferschein FROM verkaeufe GROUP BY lieferschein HAVING COUNT(*) = 1);
 ```
 
+## Teillieferungen (Gleiche Lieferscheinnr. aber unterschiedliches Datum)
+ 
+```{r}
+teillieferungen <- vk %>% group_by(lieferschein) %>% filter(datum > min(datum)) %>% summarise(anzahl=n(), lf_sum_umsatz=sum(vk_preis_num), lf_sum_abgang=sum(abgang))
+
+sum_teillieferungen <- teillieferungen %>% summarise(rows=n(), gesamtumsatz=sum(lf_sum_umsatz), gesamtabgang=sum(lf_sum_abgang))
+
+cat('Anzahl:' , sum_teillieferungen$rows)
+cat('\nGesamtumsatz:' , sum_teillieferungen$gesamtumsatz, '€')
+cat('\nGesamtabgänge:' , sum_teillieferungen$gesamtabgang)
+```
 
 # Datenbankverbindung beenden
 ```{r}
