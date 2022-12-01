@@ -1,0 +1,66 @@
+---
+title: "Lieferschein_Fragen"
+author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
+output:
+  html_notebook:
+    toc: true
+    toc_float: true
+    code_folding: none
+    number_sections: true
+---
+
+# Datenbankverbindung aufbauen
+
+```{r message=FALSE, warning=FALSE}
+library(DBI)
+library(odbc)
+library(dplyr)
+library(lubridate)
+library(tidyverse)
+library(leaflet)
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+```{r}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = "PostgreSQL Unicode",
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+# Lieferschein Zusatzfragen
+
+## Lieferscheine mit nur einer Position
+
+
+```{r}
+vk <- dbGetQuery(conn=con, statement = "select * from verkaeufe")
+```
+
+```{r}
+unique_lieferscheine <- vk %>% group_by(lieferschein) %>% summarise(anzahl=n(), lf_sum_umsatz=sum(vk_preis_num), lf_sum_abgang=sum(abgang)) %>% filter(anzahl == 1)
+```
+
+```{r}
+num_unique_lieferscheine <- unique_lieferscheine %>% summarise(rows=n(), gesamtumsatz=sum(lf_sum_umsatz), gesamtabgang=sum(lf_sum_abgang))
+
+cat('Anzahl:' , num_unique_lieferscheine$rows)
+cat('\nGesamtumsatz:' , num_unique_lieferscheine$gesamtumsatz, '€')
+cat('\nGesamtabgänge:' , num_unique_lieferscheine$gesamtabgang)
+```
+
+
+```{sql connection=con}
+SELECT COUNT(*) AS Anzahl FROM verkaeufe WHERE lieferschein IN (SELECT lieferschein FROM verkaeufe GROUP BY lieferschein HAVING COUNT(*) = 1);
+SELECT SUM(vk_preis_num) AS Gesamtumsatz FROM verkaeufe WHERE lieferschein IN (SELECT lieferschein FROM verkaeufe GROUP BY lieferschein HAVING COUNT(*) = 1);
+SELECT SUM(abgang) AS Gesamtabgaenge FROM verkaeufe WHERE lieferschein IN (SELECT lieferschein FROM verkaeufe GROUP BY lieferschein HAVING COUNT(*) = 1);
+```
+
+
+# Datenbankverbindung beenden
+```{r}
+dbDisconnect(con)
+```
