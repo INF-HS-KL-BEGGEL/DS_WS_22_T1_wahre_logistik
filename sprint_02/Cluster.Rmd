@@ -42,18 +42,6 @@ con <- DBI::dbConnect(odbc::odbc(),
 Es wird ein Clustering unterschiedlicher Daten mit dem K-Means Algorithums vorgenommen.
 
 ```{r include=FALSE}
-#customer wth every material
-materialProKunde <- dbGetQuery(conn=con, statement = "Select kunde, materialnummer From verkaeufe Order By kunde")
-onlyFans <- materialProKunde %>% select(kunde) %>% distinct()
-onlyMaterials <-  materialProKunde %>% select(materialnummer) %>% distinct()
-countOfFans <- nrow(onlyFans)
-materialProKunde
-onlyFans
-countOfFans
-onlyMaterials
-```
-
-```{r include=FALSE}
 #customers with retail value and amount of orders
 käufeProKunde <- dbGetQuery(conn=con, statement = "Select kunde, lieferschein, sum(vk_preis_num) as verkaufswert From verkaeufe Where DATE_PART('week',datum) !=1 OR DATE_PART('week',datum) !=53 Group By kunde,lieferschein")
 käufeProKunde <- käufeProKunde %>% ungroup()
@@ -88,7 +76,7 @@ Das Ergebnis des Clustering sieht aus wie folgt:
 kmeans_fancy <- kmeans(käufeProKunde_scaled %>% select(bestellungen_sc,verkaufswert_sc), 4, nstart = 100)
 kmeans_fancy
 # plot the clusters
-fviz_cluster(kmeans_fancy, data = käufeProKunde_scaled %>% select(bestellungen_sc,verkaufswert_sc), geom = c("point"),ellipse.type = "convex")
+fviz_cluster(kmeans_fancy, data = käufeProKunde_scaled %>% select(gewichtung_bestellungen=bestellungen_sc,gewichtung_verkaufswert=verkaufswert_sc), geom = c("point"),ellipse.type = "convex")
 ```
 
 
@@ -96,16 +84,6 @@ fviz_cluster(kmeans_fancy, data = käufeProKunde_scaled %>% select(bestellungen_
 #add the results to the primary table
 final_data <- cbind(käufeProKunde, cluster = kmeans_fancy$cluster)
 final_data
-```
-
-Wir ordnen die Cluster nach ihrer Größe und es wird auffällig, dass die Gruppe 4 mit weitem Abstand die Dominanteste ist und damit die meisten Kunden zu ihr gehören.
-
-```{r echo=FALSE}
-#Bar diagramm for total and rel. retail value per cluster
-ggplot(sumOfClusters %>% select(cluster,kunden), aes(x=cluster, y=kunden)) +
-  geom_bar(stat="identity", fill="steelblue")+
-  geom_text(aes(label=kunden), vjust=-0.3, size=3.5)+
-  theme_minimal()
 ```
 
 
@@ -128,9 +106,19 @@ sumOfClusters <- sumOfClusters %>% group_by(cluster) %>% summarize(
   bestellungen_avg_imCluster=mean(bestellungen),
   kunden=n())
 sumOfClusters
-#final_data
 ```
 
+Wir ordnen die Cluster nach ihrer Größe und es wird auffällig, dass einer die Cluster mit weitem Abstand die Dominanteste ist und damit die meisten Kunden zu ihm gehören.
+
+```{r echo=FALSE}
+#Bar diagramm for total and rel. retail value per cluster
+ggplot(sumOfClusters %>% select(cluster,kunden), aes(x=cluster, y=kunden)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=kunden), vjust=-0.3, size=3.5)+
+  theme_minimal()
+```
+
+Betrachten wir aber dazu noch den tatsächlichen Umsatz der jeweiligen Gruppen fällt auf, dass die beiden kleinsten Gruppen mit nur 14 bzw. 0.26 % der järhlichen Kunden zusammen für 25% des Umsatzes verantwortlich sind.
 
 ```{r echo=FALSE}
 #Bar diagramm for total and rel. retail value per cluster
@@ -151,82 +139,80 @@ ggplot(sumOfClusters %>% select(cluster,verkaufswertDesClusters,verkaufswert_rel
 
 
 
-
-
-
-
-
+```{r}
+#customer wth every material
+materialProKunde <- dbGetQuery(conn=con, statement = "Select kunde, materialnummer From verkaeufe Order By kunde")
+onlyFans <- materialProKunde %>% select(kunde) %>% distinct()
+onlyMaterials <-  materialProKunde %>% select(materialnummer) %>% distinct()
+countOfFans <- nrow(onlyFans)
+materialProKunde
+onlyFans
+countOfFans
+onlyMaterials
+```
 
 ```{r}
 #make materialnumer an numeric id; necessary for the kmeans alg.
 materialToID <- onlyMaterials %>% mutate(id=row_number())
 materialToID
-
 #add to 'materialProKunde'
 materialProKunde <- inner_join(x=materialProKunde, y=materialToID, by="materialnummer")
 materialProKunde
-
-#remove material number as its no umeric value, which is necassary for kmeans
+#remove material number as its no numeric value, which is necassary for kmeans
 mIDproKunde <- materialProKunde %>% select(kunde, id)
 mIDproKunde
 ```
 
-
 ```{r}
-mIDProKunde_split <- mIDproKunde %>% drop_na() # sicher ist sicher
-mIDProKunde_split
+#cross function for article 1 bought with article 2
+#it actually does it by group kunde, because to make it at once is not supported by the API, cause to the to high memory consumption
+# to the end they wil merged back together
+#WARNING!: This will need some time
+crossGroups = function(DataFrameList)
+{
+    DataFrameList <- crossing(DataFrameList,DataFrameList, .name_repair = "unique")
+    DataFrameList <- DataFrameList[DataFrameList$id...2 != DataFrameList$id...4, ] 
+    DataFrameList <- DataFrameList %>% select(material_eins=id...2,material_zwei=id...4)
+    return(DataFrameList)
+}
+
+materialGekauftMitProGruppe <- mIDproKunde %>% group_by(kunde) %>% group_split()
+materialGekauftMitProGruppe <- lapply(materialGekauftMitProGruppe %>% head(), crossGroups)
+
+materialGekauftMit <- materialGekauftMitProGruppe[[1]]
+materialGekauftMit <- subset(materialGekauftMit,FALSE)
+
+for (singleGroup in materialGekauftMitProGruppe)
+{
+  materialGekauftMit <- full_join(x=materialGekauftMit, y=singleGroup) %>% distinct()
+}
+
+materialGekauftMit
 ```
 
 
-```{r}
-#basic kmeans
-# Set seed
-set.seed(1234)
-
-# Cluster Analysis - kmeans
-kmeans_basic <- kmeans(mIDproKunde, centers = 5)
-kmeans_basic_table <- data.frame(kmeans_basic$size, kmeans_basic$centers)
-kmeans_basic_df <- data.frame(Cluster = kmeans_basic$cluster, mIDproKunde)
-kmeans_basic_df
-kmeans_basic_table
-kmeans_basic
-# head of df
-```
-
-```{r}
-# Example ggplot
-ggplot(data = kmeans_basic_df, aes(y = Cluster),palette="YIGn") +
-  geom_bar(aes(fill = kunde)) +
-  ggtitle("Count of Clusters by Kunde") +
-  theme(plot.title = element_text(hjust = 0.5))
-```
-
-```{r}
+```{r echo=FALSE}
 # Fancy K-Means
-#we cut a few out of the table for this analysis [1:5000, ], else the function wont operate cause to a to big memory usage
-fviz_nbclust(mIDproKunde[1:5000, ], kmeans, nstart=100, method = "wss")
+#we cut a few out of the table for this analysis [1:10000, ], else the function wont operate cause to a to big memory usage
+fviz_nbclust(scale(materialGekauftMit)[1:10000, ], kmeans, nstart=100, method = "wss")
 ```
-```{r}
+
+```{r echo=FALSE}
 # Fancy K-Means
-kmeans_fancy <- kmeans(mIDproKunde, 5, nstart = 100)
+gc()
+kmeans_fancy <- kmeans(scale(materialGekauftMit), 3, nstart = 100, algorithm="Lloyd")
 kmeans_fancy
 # plot the clusters
-fviz_cluster(kmeans_fancy, data = mIDproKunde, geom = c("point"),ellipse.type = "convex")
+fviz_cluster(kmeans_fancy, data = scale(materialGekauftMit), geom = c("point"),ellipse.type = "convex")
 ```
 
-```{r}
-# Fancy K-Means
-print(kmeans_fancy$centers)
-final_data <- cbind(mIDproKunde, cluster = kmeans_fancy$cluster)
-final_data
+```{r include=FALSE}
+#add the results to the primary table
+final_material <- cbind(materialGekauftMit, cluster = kmeans_fancy$cluster)
+final_material
 ```
-```{r}
-# Example ggplot
-ggplot(data = data.frame(Cluster = kmeans_fancy$cluster, mIDproKunde), aes(y = Cluster),palette="YIGn") +
-  geom_bar(aes(fill = kunde)) +
-  ggtitle("Count of Clusters by Kunde") +
-  theme(plot.title = element_text(hjust = 0.5))
-```
+
+
 
 
 # Datenbankverbindung beenden
