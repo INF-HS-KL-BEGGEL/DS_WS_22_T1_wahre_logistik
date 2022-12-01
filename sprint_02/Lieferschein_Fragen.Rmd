@@ -36,6 +36,27 @@ con <- DBI::dbConnect(odbc::odbc(),
 vk <- dbGetQuery(conn=con, statement = "select * from verkaeufe")
 ```
 
+# Lieferschein Präsentationsfragen
+## Wenn uns die Menge der Artikel interessiert
+### Welche Gesamtmenge an Artikeln verlässt das Lager pro Tag?
+### Wie viele unterschiedliche Artikel verlassen das Lager pro Tag?
+### Welche Anzahl eines Artikels verlassen das Lager pro Tag?
+### Wenn uns der Umsatz der Artikel interessiert:
+### Welcher Umsatz wird pro Tag generiert?
+### Welcher Umsatz wird mit jedem einzelnen Artikel pro Tag generiert?
+
+## Wenn uns die Kunden interessieren
+### Wie sind die Artikel auf die Kunden verteilt?
+### Wie ist der Umsatz auf die Kunden verteilt?
+### Wenn und die Kommissionierung interessiert
+### Wieviele Lieferscheine werden am Tag bearbeitet?
+### Wieviele Positionen sind damit verbunden?
+### Wie ist das tägliche Sortiment strukturiert?
+### Wenn uns die Klassifizierung der Artikel interessiert:
+### Handelt es sich bei den Artikeln um A, B oder C-Artikel?
+### In welcher Kombination verlassen die Artikel das Lager? (AA, AB,…)
+### Welcher Umsatz wird pro Tag mit A, B oder C-Artikeln jeweils generiert?
+
 # Lieferschein Zusatzfragen
 ## Lieferscheine mit nur einer Position
 ```{r}
