@@ -120,8 +120,8 @@ abc_analyse_nach_zugriffen %>%
   mutate(anteil_artikel_in_klasse = row_number()/n(), anteil_zugriffe_kumuliert_in_klasse = cumsum(anteil_zugriffe)/sum(anteil_zugriffe)) %>% 
   ggplot() +
   geom_line(mapping = aes(x = anteil_artikel_in_klasse, anteil_zugriffe_kumuliert_in_klasse), color="blue") +
-  geom_hline(yintercept = 0, size=0.8) +
-  geom_vline(xintercept = 0, size=0.8) +
+  geom_hline(yintercept = 0, linewidth=0.8) +
+  geom_vline(xintercept = 0, linewidth=0.8) +
   facet_wrap(~klasse) +
   labs(
     x = "Anteil Artikel (in der jew. Klasse)",
@@ -137,8 +137,8 @@ abc_analyse_nach_zugriffen %>%
   mutate(anteil_artikel = row_number()/n()) %>% 
   ggplot() +
   geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_zugriffe_kumuliert*100, color=klasse)) +
-  geom_hline(yintercept = 0, size=0.8) +
-  geom_vline(xintercept = 0, size=0.8) +
+  geom_hline(yintercept = 0, linewidth=0.8) +
+  geom_vline(xintercept = 0, linewidth=0.8) +
   scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
   scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
   coord_fixed(ratio = 1) +
@@ -170,8 +170,8 @@ abc_analyse_material_nach_umsatz %>%
   mutate(anteil_artikel = row_number()/n()) %>% 
   ggplot() +
   geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_umsatz_kumuliert*100, color=klasse)) +
-  geom_hline(yintercept = 0, size=0.8) + 
-  geom_vline(xintercept = 0, size=0.8) +
+  geom_hline(yintercept = 0, linewidth=0.8) + 
+  geom_vline(xintercept = 0, linewidth=0.8) +
   scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
   scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
   coord_fixed(ratio = 1) +
@@ -190,8 +190,8 @@ abc_analyse_material_nach_umsatz %>%
   mutate(anteil_artikel_in_klasse = row_number()/n(), anteil_umsatz_kumuliert_in_klasse = cumsum(anteil_umsatz)/sum(anteil_umsatz)) %>% 
   ggplot() +
   geom_line(mapping = aes(x = anteil_artikel_in_klasse, anteil_umsatz_kumuliert_in_klasse), color="blue") +
-  geom_hline(yintercept = 0, size=0.8) +
-  geom_vline(xintercept = 0, size=0.8) +
+  geom_hline(yintercept = 0, linewidth=0.8) +
+  geom_vline(xintercept = 0, linewidth=0.8) +
   facet_wrap(~klasse) +
   labs(
     x = "Anteil Artikel (in der jew. Klasse)",
@@ -234,8 +234,8 @@ abc_analyse_kunde_nach_umsatz %>%
   ggplot() +
   geom_line(mapping = aes(x=anteil_kunde_kumuliert_in_klasse*100, y=anteil_umsatz_kumuliert_in_klasse*100), color="blue") +
   facet_wrap(~klasse) + 
-  geom_hline(yintercept = 0, size=0.8) +
-  geom_vline(xintercept = 0, size=0.8) +
+  geom_hline(yintercept = 0, linewidth=0.8) +
+  geom_vline(xintercept = 0, linewidth=0.8) +
   scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
   scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
   coord_fixed(ratio=1) +
@@ -253,8 +253,8 @@ abc_analyse_kunde_nach_umsatz %>%
   mutate(anteil_kunde_kumuliert = row_number()/n()) %>%
   ggplot() +
   geom_line(mapping = aes(x=anteil_kunde_kumuliert*100, y=anteil_umsatz_kumuliert*100, color=klasse)) +
-  geom_hline(yintercept = 0, size=0.8) +
-  geom_vline(xintercept = 0, size=0.8) +
+  geom_hline(yintercept = 0, linewidth=0.8) +
+  geom_vline(xintercept = 0, linewidth=0.8) +
   scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
   scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
   coord_fixed(ratio=1) +
