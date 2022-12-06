@@ -146,7 +146,7 @@ abc_analyse_nach_zugriffen %>%
     x = "Anteil Artikel (in %)",
     y = "Anteil Zugriffe kumuliert (in %)",
     color = "Klasse",
-    title = "ABC-Analyse nach Zugriffen"
+    title = "ABC-Analyse der Artikel nach Zugriffen"
   )
 ```
 
@@ -179,7 +179,7 @@ abc_analyse_material_nach_umsatz %>%
     x = "Anteil Artikel (in %)", 
     y = "Anteil Umsatz kumuliert (in %)",
     color = "Klasse",
-    title = "ABC-Analyse nach Umsatz"
+    title = "ABC-Analyse der Artikel nach Umsatz"
   )
 ```
 
@@ -226,6 +226,13 @@ abc_analyse_kunde_nach_umsatz <- verkaeufe %>%
 ```
 
 
+```{r include=FALSE}
+umsatz_je_klasse <- abc_analyse_kunde_nach_umsatz %>% 
+  group_by(klasse) %>% 
+  summarise(umsatz_in_klasse = sum(umsatz)) %>% 
+  mutate(umsatz_in_klasse_formatiert = format(round(umsatz_in_klasse), big.mark=".", decimal.mark=","))
+```
+
 ```{r echo=FALSE}
 # Erstelle ein Facet-Grid. Dadurch betrachten wir für jede Klasse einen eigenen Plot und können somit die Homogenität der Klassen überprüfen.
 abc_analyse_kunde_nach_umsatz %>% 
@@ -238,6 +245,7 @@ abc_analyse_kunde_nach_umsatz %>%
   geom_vline(xintercept = 0, linewidth=0.8) +
   scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
   scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  geom_label(data=umsatz_je_klasse, mapping = aes(x=50, y=15, label=glue("{umsatz_in_klasse_formatiert} €")), hjust="middle", vjust="middle", color="black", fill="white") + 
   coord_fixed(ratio=1) +
   labs(
     x = "Anteil Kunde in der jew. Klasse (in %)",
