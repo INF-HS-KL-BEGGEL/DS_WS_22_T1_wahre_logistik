@@ -163,6 +163,14 @@ abc_analyse_material_nach_umsatz <- verkaeufe %>%
 ```
 
 
+```{r include=FALSE}
+material_umsatz_je_klasse <- abc_analyse_material_nach_umsatz %>% 
+  group_by(klasse) %>% 
+  summarise(umsatz_in_klasse = sum(umsatz)) %>% 
+  mutate(umsatz_in_klasse_formatiert = format(round(umsatz_in_klasse), big.mark=".", decimal.mark=","))
+```
+
+
 ```{r echo=FALSE}
 # Erstelle den Standard-(Lehrbuch)-Graph von der ABC-Analyse
 # Dabei betrachten wir, welcher Anteil der Datensätze, zusammen welchen Anteil am betrachteten Merkmal hat.
@@ -189,13 +197,17 @@ abc_analyse_material_nach_umsatz %>%
   group_by(klasse) %>% 
   mutate(anteil_artikel_in_klasse = row_number()/n(), anteil_umsatz_kumuliert_in_klasse = cumsum(anteil_umsatz)/sum(anteil_umsatz)) %>% 
   ggplot() +
-  geom_line(mapping = aes(x = anteil_artikel_in_klasse, anteil_umsatz_kumuliert_in_klasse), color="blue") +
+  geom_line(mapping = aes(x = anteil_artikel_in_klasse*100, anteil_umsatz_kumuliert_in_klasse*100), color="blue") +
   geom_hline(yintercept = 0, linewidth=0.8) +
   geom_vline(xintercept = 0, linewidth=0.8) +
+  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
   facet_wrap(~klasse) +
+  geom_label(data=material_umsatz_je_klasse, mapping = aes(x=50, y=15, label=glue("{umsatz_in_klasse_formatiert} €")), hjust="middle", vjust="middle", color="black", fill="white") +
+  coord_fixed(ratio=1) +
   labs(
-    x = "Anteil Artikel (in der jew. Klasse)",
-    y = "Anteil am Umsatz (in der jew. Klasse)"
+    x = "Anteil Artikel in der jew. Klasse (in %)",
+    y = "Anteil am Umsatz in der jew. Klasse (in %)"
   )
 ```
 
@@ -227,7 +239,7 @@ abc_analyse_kunde_nach_umsatz <- verkaeufe %>%
 
 
 ```{r include=FALSE}
-umsatz_je_klasse <- abc_analyse_kunde_nach_umsatz %>% 
+kunden_umsatz_je_klasse <- abc_analyse_kunde_nach_umsatz %>% 
   group_by(klasse) %>% 
   summarise(umsatz_in_klasse = sum(umsatz)) %>% 
   mutate(umsatz_in_klasse_formatiert = format(round(umsatz_in_klasse), big.mark=".", decimal.mark=","))
@@ -245,7 +257,7 @@ abc_analyse_kunde_nach_umsatz %>%
   geom_vline(xintercept = 0, linewidth=0.8) +
   scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
   scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
-  geom_label(data=umsatz_je_klasse, mapping = aes(x=50, y=15, label=glue("{umsatz_in_klasse_formatiert} €")), hjust="middle", vjust="middle", color="black", fill="white") + 
+  geom_label(data=kunden_umsatz_je_klasse, mapping = aes(x=50, y=15, label=glue("{umsatz_in_klasse_formatiert} €")), hjust="middle", vjust="middle", color="black", fill="white") + 
   coord_fixed(ratio=1) +
   labs(
     x = "Anteil Kunde in der jew. Klasse (in %)",
