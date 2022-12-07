@@ -578,7 +578,7 @@ VariationskoeffizientNachMonaten
 ## Klasse-Z im Vergleich zu einmaligen Verkäufen
 ```{r echo=FALSE}
 # plot only last class together with lieferscheine==1
-subsetOfVariationskoeffizient <- select(VariationskoeffizientNachMonaten,Variationskoeffizient,anteil_artikel,klasse)
+subsetOfVariationskoeffizient <-select(VariationskoeffizientNachMonaten,Variationskoeffizient,anteil_artikel,klasse)
 subsetOfVariationskoeffizient <- subsetOfVariationskoeffizient %>% filter(klasse=="Z")
 minimumAnteil <- min(subsetOfVariationskoeffizient$anteil_artikel)
 subsetOfVariationskoeffizient %>% 
@@ -594,8 +594,8 @@ subsetOfVariationskoeffizient %>%
     color = "Klasse",
     title = "Betrachtung der Z-Klasse"
   )
-subsetOfVariationskoeffizient <- select(VariationskoeffizientNachMonaten,Variationskoeffizient,anteil_artikel,klasse,lieferscheine)
-subsetOfVariationskoeffizient <- subsetOfVariationskoeffizient[subsetOfVariationskoeffizient$lieferscheine == 1, ]
+subsetOfVariationskoeffizient <-select(VariationskoeffizientNachMonaten,Variationskoeffizient,anteil_artikel,klasse,lieferscheine.x)
+subsetOfVariationskoeffizient <- subsetOfVariationskoeffizient[subsetOfVariationskoeffizient$lieferscheine.x == 1, ]
 subsetOfVariationskoeffizient %>% 
   ggplot() +
   geom_line(mapping = aes(x=(anteil_artikel-minimumAnteil)*100, y=Variationskoeffizient, color=klasse),size=1) +
