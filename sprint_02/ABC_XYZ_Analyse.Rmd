@@ -24,6 +24,15 @@ readRenviron("../env_files/.Renviron.postgres")
 ```
 
 ```{r include=FALSE}
+con <- dbConnect(drv=RPostgres::Postgres(),
+                 dbname=Sys.getenv("dbname"),
+                 host=Sys.getenv("host"),
+                 port=Sys.getenv("port"),
+                 password=Sys.getenv("password"),
+                 user=Sys.getenv("user"))
+```
+
+```{r include=FALSE}
 con <- DBI::dbConnect(odbc::odbc(),
                       Driver   = Sys.getenv("driver"),
                       Server   = Sys.getenv("host"),
@@ -295,7 +304,7 @@ abc_analyse_kunde_nach_umsatz %>%
 
 
 # XYZ-Analyse
-##Formeln:
+## Formeln:
 Erwartungswert=Mittelwert von Abgang
 Varianz = Summe von ((Abgang(Artikel) - Erwartungswert(Artikel)) zum Quadrat) /  Größe der Menge
 [https://axel-schroeder.de/varianz-standardabweichung-und-co-statistische-grundlagen-fuer-kleine-unternehmen/]
@@ -390,7 +399,7 @@ nachMaterialnummernProMonat
 ```
 
 
-### Erwartungswert
+
 ```{r include=FALSE}
 #ermittle den Erwartungswert
 wochen<-nrow(weekTable)
@@ -408,7 +417,7 @@ ErwartungswertNachMonaten
 ```
 
 
-### Varianz
+
 
 ```{r include=FALSE}
 #dies stellt nur einen  Rechen Zwischenschritt dar für die Berechnung der Varianz
@@ -450,7 +459,7 @@ AbgangStandardabweichungNachMonaten
 ```
 
 
-### Variationskoeffizient
+
 
 ```{r include=FALSE}
 #AbgangVarianzkoeffizient
@@ -462,11 +471,11 @@ VariationskoeffizientNachMonaten <- mutate(AbgangStandardabweichungNachMonaten, 
 VariationskoeffizientNachMonaten
 ```
 
-### Artikelanteil, Klassifizierung, Zählung aller Bestellungen
+
 ```{r include=FALSE}
 #week
 #ergänzen des gesamten Abgangs und der menge an Bestellungen
-VariationskoeffizientNachWochen <- inner_join(x=VariationskoeffizientNachWochen,y=nachMaterialnummern,by="materialnummer")
+VariationskoeffizientNachWochen <- inner_join(x=VariationskoeffizientNachWochen,y=nachMaterialnummernProWoche,by="materialnummer")
 VariationskoeffizientNachWochen <- inner_join(x=VariationskoeffizientNachWochen,y=Bestellungen,by="materialnummer")
 #sortieren
 VariationskoeffizientNachWochen <- VariationskoeffizientNachWochen %>% arrange(Variationskoeffizient) 
@@ -487,7 +496,7 @@ VariationskoeffizientNachWochen <- VariationskoeffizientNachWochen %>% mutate(kl
                                                                         ))
 #month
 #ergänzen des gesamten Abgangs und der menge an Bestellungen
-VariationskoeffizientNachMonaten <- inner_join(x=VariationskoeffizientNachMonaten,y=nachMaterialnummern,by="materialnummer")
+VariationskoeffizientNachMonaten <- inner_join(x=VariationskoeffizientNachMonaten,y=nachMaterialnummernProMonat,by="materialnummer")
 VariationskoeffizientNachMonaten <- inner_join(x=VariationskoeffizientNachMonaten,y=Bestellungen,by="materialnummer")
 #sortieren
 VariationskoeffizientNachMonaten <- VariationskoeffizientNachMonaten %>% arrange(Variationskoeffizient) 
@@ -512,8 +521,6 @@ VariationskoeffizientNachWochen
 VariationskoeffizientNachMonaten
 ```
 
-
-### Plot
 
 ## Klasse-Z im Vergleich zu einmaligen Verkäufen
 ```{r echo=FALSE}
@@ -587,23 +594,21 @@ VariationskoeffizientNachMonaten %>%
   )
 ```
 
-
 # ABC-XYZ-Analyse
 Die Analyse fokussiert sich auf die Menge des Abgangs.
 ```{r include=FALSE}
 #merge abc and xyz
-matrixAnalyse <- inner_join(x=abc_analyse_nach_umsatz,y=Variationskoeffizient,by="materialnummer")
-matrixAnalyse <- matrixAnalyse %>% rename(abc_analyse=klasse.x, xyz_analyse=klasse.y)
-matrixAnalyse <- matrixAnalyse %>% select(materialnummer,abc_analyse,xyz_analyse)
-#calculate the amount of entrys per ABC and XYZ combination
-matrixAnalyse <- matrixAnalyse %>% group_by(abc_analyse,xyz_analyse) %>% summarize(Eintraege=n())
-matrixAnalyse <- matrixAnalyse %>% mutate(eintraege_verhaeltnis=Eintraege/(sum(matrixAnalyse$Eintraege)/100))
-```
+matrixAnalyse <- inner_join(x=abc_analyse_material_nach_umsatz,y=VariationskoeffizientNachWochen,by="materialnummer")
+matrixAnalyse
 
-```{r warining=FALSE}
+matrixAnalyse <- matrixAnalyse %>% select(klasse.x,klasse.y,materialnummer,umsatz)
+matrixAnalyse <- matrixAnalyse %>% rename(abc_analyse=klasse.x, xyz_analyse=klasse.y)
+matrixAnalyse <- matrixAnalyse %>% group_by(abc_analyse,xyz_analyse) %>% summarize(materialien=n(), umsatz=sum(umsatz))
+
+#This is hardcoded! Maybe make columns and row titles of the matrix later dynamic.
 #place the values in a matrix
-castedMatrixAnalyse <- matrix(matrixAnalyse$eintraege_verhaeltnis, nrow = 5, dimnames = list(c("V","W","X","Y","Z"), c("A","B","C")))
-castedMatrixAnalyse
+castedMatrixAnalyse <- matrix(glue('{as.character(matrixAnalyse$materialien)} Artikel
+{as.character(matrixAnalyse$umsatz)} €'), nrow = 4, dimnames = list(c("W","X","Y","Z"), c("A","B","C","D","E")))
 ```
 
 ```{r include=FALSE}
