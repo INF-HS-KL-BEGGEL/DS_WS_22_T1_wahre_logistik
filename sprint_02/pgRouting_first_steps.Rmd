@@ -1,0 +1,67 @@
+---
+title: "pgRouting - Erste Schritte"
+author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
+output:
+  html_notebook:
+    toc: true
+    toc_float: true
+    code_folding: none
+    number_sections: true
+---
+
+```{r include=FALSE}
+library(DBI)
+library(odbc)
+library(readr)
+library(leaflet)
+library(dplyr)
+library(stringr)
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+```{r include=FALSE}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname_routing"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+
+# Routen berechnen
+## München - Hamburg
+
+```{r}
+query <- "SELECT seq, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
+        FROM pgr_dijkstra('SELECT id, source, target, cost, reverse_cost FROM de_edges', 3828327, 3455, TRUE) as route
+	      inner join
+	      de_edges_vertices_pgr as nodes
+	      on route.node = nodes.id;"
+
+route_munich_hamburg <- as_tibble(dbGetQuery(conn=con, statement = query))
+```
+
+```{r}
+route_munich_hamburg %>% head()
+```
+
+
+# Routen visualisieren
+## München - Hamburg
+```{r}
+lat_values <- route_munich_hamburg$lat
+lon_values <- route_munich_hamburg$lon
+```
+
+```{r}
+my_map <- leaflet() %>% addTiles()
+```
+
+```{r}
+my_map %>% addPolylines(lat=lat_values, lng=lon_values) 
+```
