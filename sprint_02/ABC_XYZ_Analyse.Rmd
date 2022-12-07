@@ -81,12 +81,20 @@ abc_analyse <- function(.data, column, thresholds){
 
 
 #Führe eine ABC-Analyse der Artikel nach den Zugriffen durch
+thresholds <- c(0.79913, 0.959775) # Martins geheime Grenzen
+# thresholds <- c(0.8, 0.96)
+# thresholds <- c(0.075, 0.15, 0.3, 0.45, 0.65, 0.75, 0.9, 0.96)
+
 abc_analyse_nach_zugriffen <- verkaeufe %>%
   group_by(materialnummer) %>%
   summarise(anzahl_zugriffe = n()) %>%
-  # abc_analyse(anzahl_zugriffe, thresholds = c(0.075, 0.15, 0.3, 0.45, 0.65, 0.75, 0.9, 0.96)) %>%
-  abc_analyse(anzahl_zugriffe, thresholds = c(0.79913, 0.959775)) %>% # Martins geheime Grenzen
+  # abc_analyse(anzahl_zugriffe, thresholds = thresholds) %>%
+  abc_analyse(anzahl_zugriffe, thresholds = thresholds) %>% # Martins geheime Grenzen
   rename(anteil_zugriffe = anteil, anteil_zugriffe_kumuliert = anteil_kumuliert)
+```
+
+```{r echo=FALSE}
+tibble(Klasse = LETTERS[0:length(thresholds)], Grenzen = glue("{round(thresholds*100, digits=0)} %"))
 ```
 
 
@@ -168,11 +176,18 @@ abc_analyse_nach_zugriffen %>%
 ## Material nach Umsatz (ABC-Material)
 ```{r include=FALSE}
 # Führe eine ABC-Analyse der Artikel nach dem Umsatz durch.
+thresholds <- c(0.4, 0.8, 0.96, 0.99)
+
 abc_analyse_material_nach_umsatz <- verkaeufe %>% 
   group_by(materialnummer) %>% 
   summarise(umsatz = sum(vk_preis_num)) %>% 
-  abc_analyse(column = umsatz, thresholds = c(0.4, 0.8, 0.96, 0.99)) %>% 
+  abc_analyse(column = umsatz, thresholds = thresholds) %>% 
   rename(anteil_umsatz = anteil, anteil_umsatz_kumuliert = anteil_kumuliert)
+```
+
+
+```{r echo=FALSE}
+tibble(Klasse = LETTERS[0:length(thresholds)], Grenzen = glue("{round(thresholds*100, digits=0)} %"))
 ```
 
 
@@ -243,11 +258,18 @@ abc_analyse_material_nach_umsatz %>%
 ## Kunden nach Umsatz
 ```{r include=FALSE}
 # Führe eine ABC-Analyse der Kunden nach dem Umsatz durch
+thresholds <- c(0.4, 0.8, 0.96, 0.99)
+
 abc_analyse_kunde_nach_umsatz <- verkaeufe %>% 
   group_by(kunde) %>% 
   summarise(umsatz = sum(vk_preis_num)) %>% 
-  abc_analyse(column = umsatz, thresholds = c(0.4, 0.8, 0.96, 0.99)) %>% 
+  abc_analyse(column = umsatz, thresholds = thresholds) %>% 
   rename(anteil_umsatz = anteil, anteil_umsatz_kumuliert = anteil_kumuliert)
+```
+
+
+```{r echo=FALSE}
+tibble(Klasse = LETTERS[0:length(thresholds)], Grenzen = glue("{round(thresholds*100, digits=0)} %"))
 ```
 
 
