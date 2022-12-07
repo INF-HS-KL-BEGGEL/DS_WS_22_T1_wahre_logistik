@@ -90,6 +90,15 @@ abc_analyse_nach_zugriffen <- verkaeufe %>%
 ```
 
 
+```{r include=FALSE}
+material_zugriffe_je_klasse <- abc_analyse_nach_zugriffen %>% 
+  group_by(klasse) %>% 
+  summarise(zugriffe_in_klasse = sum(anzahl_zugriffe)) %>% 
+  mutate(zugriffe_in_klasse_formatiert = format(round(zugriffe_in_klasse), big.mark=".", decimal.mark=","))
+```
+
+
+
 ```{r echo=FALSE}
 # Erstelle eine Bar-Chart, die veranschaulichen soll, wie viele Artikel in welcher Klasse enthalten sind.
 
@@ -119,10 +128,14 @@ abc_analyse_nach_zugriffen %>%
   group_by(klasse) %>% 
   mutate(anteil_artikel_in_klasse = row_number()/n(), anteil_zugriffe_kumuliert_in_klasse = cumsum(anteil_zugriffe)/sum(anteil_zugriffe)) %>% 
   ggplot() +
-  geom_line(mapping = aes(x = anteil_artikel_in_klasse, anteil_zugriffe_kumuliert_in_klasse), color="blue") +
+  geom_line(mapping = aes(x = anteil_artikel_in_klasse*100, anteil_zugriffe_kumuliert_in_klasse*100), color="blue") +
   geom_hline(yintercept = 0, linewidth=0.8) +
   geom_vline(xintercept = 0, linewidth=0.8) +
   facet_wrap(~klasse) +
+  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  coord_fixed(ratio = 1) +
+  geom_label(data=material_zugriffe_je_klasse, mapping = aes(x=50, y=15, label=glue("{zugriffe_in_klasse_formatiert} Zugriffe")), hjust="middle", vjust="middle", color="black", fill="white") +
   labs(
     x = "Anteil Artikel (in der jew. Klasse)",
     y = "Anteil an den Zugriffen (in der jew. Klasse)"
