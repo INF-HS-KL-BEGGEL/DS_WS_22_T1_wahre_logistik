@@ -97,11 +97,11 @@ subRules<-rules[quality(rules)$confidence>0.4]
 plot(subRules)
 ```
 Dabei gilt:
-Confidence: Die Wahrscheinlichkaiet, dass wenn A gekauft wurde, auch B gekauft wird.
-Support: Die Wahrscheinlichkeit, dass wenn B gekauft wird, auch A zuvor gekauft wurde.
-Lift: Beschreibt die Korrelation zwischen A und B.
-  - Bei einem Lift von 1 gibt es keine Abhängigkeit zwischen beiden und es kann keine Vorhersage gemacht werden
-  - Bei einem Lift > 1 sind beide von einander abhängig. Desto höher der Lift, umso stärker die Abhängigkeit
+Confidence: Die Wahrscheinlichkaiet, dass wenn A gekauft wurde, auch B gekauft wird.  
+Support: Die Häufigkeit wie oft diese Korrelation im gesamten Datensatz zu finden ist.   
+Lift: Beschreibt die Korrelation zwischen A und B.  
+  - Bei einem Lift von 1 gibt es keine Abhängigkeit zwischen beiden und es kann keine Vorhersage gemacht werden  
+  - Bei einem Lift > 1 sind beide von einander abhängig. Desto höher der Lift, umso stärker die Abhängigkeit  
 
 Daraus lässt sich schließen, dass meist die Abhängigkeiten sehr einseitig sind.
 
@@ -151,6 +151,6 @@ Ebenso lassen sich die jeweiligen Regeln in Detail betrachten:
 plotMaterialRules("276012000",10)
 ```
 
-```{r}
+```{r echo=FALSE}
 dbDisconnect(con)
 ```
