@@ -6,7 +6,7 @@ output: html_notebook
 # Disclaimer: Urheberrecht
 Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
 
-# Todo: tolle Überschrift finden
+## Produkt Häufigkeit
 
 ```{r include=FALSE}
 library(DBI)
@@ -84,6 +84,8 @@ https://www.datacamp.com/tutorial/market-basket-analysis-r
 # Create an item frequency plot for the top 30 items
 itemFrequencyPlot(tr,topN=30,type="absolute",col=brewer.pal(8,'Pastel2'), main="Absolute Item Frequency Plot for most frequent 30 items")
 ```
+## Apriori Funktion
+
 Als nächstes betrachten wir uns die konkreten Korrelationen bzw. die Regeln, die uns die Apriorie Funktion berechnet hat:
 
 ```{r include=FALSE}
@@ -116,12 +118,13 @@ getRulesFor <- function(material) {
   temp <- apriori(tr, parameter = list(supp=0.001, conf=0.5),appearance = list(default="lhs",rhs=material))
   rulesSpecificDF <- as(temp,"data.frame") %>% arrange(desc(confidence))
   rulesSpecificDF$ruleNumber <- seq.int(nrow(rulesSpecificDF))
+  rulesSpecificDF
 }
 
 plotMaterialRules <- function(material,amountOfRules) {
   rulesSpecific <- getRulesFor(material)
   #Bar diagramm for total and rel. retail value per cluster
-  plottingData <- rulesSpecificDF %>% select(confidence,support, rules)%>% head(amountOfRules)
+  plottingData <- rulesSpecific %>% select(confidence,support, rules)%>% head(amountOfRules)
   plottingData <- plottingData %>% arrange(confidence)
   plottingData$ruleNumber <- seq.int(nrow(plottingData))
   ggplot(plottingData, aes(x=ruleNumber, y=confidence,fill=confidence)) +
@@ -144,7 +147,7 @@ Betrachten wir die Regeln für das Produkt mit den meisten Regeln '276012000':
 
 ```{r echo=FALSE}
 #Bar diagramm for total and rel. retail value per cluster
-ggplot(rulesSpecificDF %>% select(rules,confidence,support, ruleNumber), aes(x=ruleNumber, y=confidence,fill=confidence)) +
+ggplot(rulesSpecific %>% select(rules,confidence,support, ruleNumber), aes(x=ruleNumber, y=confidence,fill=confidence)) +
   geom_bar(stat="identity", fill="steelblue",color="white")+
   #geom_text(aes(label=paste(as.character(round(verkaufswert_rel, digits = 2)),"%")), vjust=+3, size=3.5)+
   #geom_text(aes(label=verkaufswertDesClusters), vjust=+1.3, size=3.5)+

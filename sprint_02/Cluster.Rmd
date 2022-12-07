@@ -37,10 +37,6 @@ con <- DBI::dbConnect(odbc::odbc(),
 ```
 
 
-
-# Todo: tolle Überschrift finden
-Es wird ein Clustering unterschiedlicher Daten mit dem K-Means Algorithums vorgenommen.
-
 ```{r include=FALSE}
 #customers with retail value and amount of orders
 käufeProKunde <- dbGetQuery(conn=con, statement = "Select kunde, lieferschein, sum(vk_preis_num) as verkaufswert From verkaeufe Where DATE_PART('week',datum) !=1 OR DATE_PART('week',datum) !=53 Group By kunde,lieferschein")
@@ -89,7 +85,7 @@ cluster_data
 
 ```{r include=FALSE}
 #get the summarised values for each cluster
-sumOfClusters <- final_data %>% select(cluster,verkaufswert,bestellungen)
+sumOfClusters <- cluster_data %>% select(cluster,verkaufswert,bestellungen)
 meanVerkaufswert <- mean(sumOfClusters$verkaufswert)
 meanBestellungen <- mean(sumOfClusters$bestellungen)
 amountVerkaufswert <- length(sumOfClusters$verkaufswert)
