@@ -16,6 +16,7 @@ library(readr)
 library(leaflet)
 library(dplyr)
 library(stringr)
+library(glue)
 readRenviron("../env_files/.Renviron.postgres")
 ```
 
@@ -59,7 +60,7 @@ lon_values <- route_munich_hamburg$lon
 ```
 
 ```{r include=FALSE}
-my_map <- leaflet() %>% addTiles()
+my_map <- leaflet(width="100%") %>% addTiles()
 ```
 
 ```{r echo=FALSE}
@@ -74,13 +75,13 @@ query <- "select *, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
           from de_edges_vertices_pgr
           order by the_geom <-> ST_SetSRID(ST_MakePoint(7.359225,49.260058), 4326)
           limit 1;"
-
+# Das mit dem SRID bei Gelegenheit nochmal genauer angucken
 nearest_node <- dbGetQuery(conn=con, statement = query)
 ```
 
 
 ```{r include=FALSE}
-my_map <- leaflet() %>% addTiles()
+my_map <- leaflet(width="100%") %>% addTiles()
 ```
 
 
@@ -104,7 +105,7 @@ bbox_nodes <- as_tibble(dbGetQuery(conn=con, statement = query))
 
 
 ```{r include=FALSE}
-my_map <- leaflet() %>% addTiles()
+my_map <- leaflet(width="100%") %>% addTiles()
 ```
 
 
@@ -112,3 +113,62 @@ my_map <- leaflet() %>% addTiles()
 my_map %>% addMarkers(lat = bbox_nodes$lat, lng=bbox_nodes$lon)
 ```
 
+## Haute Cuisine
+
+```{r include=FALSE}
+mensa_zw_coord <- list(lon=7.361221, lat=49.260243)
+mensa_ps_coord <- list(lon=7.601842, lat=49.210655)
+```
+
+
+```{r include=FALSE}
+# Nächst gelegenen Node zu Mensa ZW finden
+query <- glue(
+          "SELECT id, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
+          from de_edges_vertices_pgr
+          order by the_geom <-> ST_SetSRID(ST_MakePoint({mensa_zw_coord$lon}, {mensa_zw_coord$lat}), 4326)
+          limit 1;"
+          )
+# Das mit dem SRID bei Gelegenheit nochmal genauer angucken
+mensa_zw_nearest_node <- dbGetQuery(conn=con, statement = query)
+```
+
+
+```{r include=FALSE}
+# Nächst gelegenen Node zu Mensa PS finden
+query <- glue(
+          "SELECT id, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
+          from de_edges_vertices_pgr
+          order by the_geom <-> ST_SetSRID(ST_MakePoint({mensa_ps_coord$lon}, {mensa_ps_coord$lat}), 4326)
+          limit 1;"
+          )
+# Das mit dem SRID bei Gelegenheit nochmal genauer angucken
+mensa_ps_nearest_node <- dbGetQuery(conn=con, statement = query)
+```
+
+
+```{r include=FALSE}
+# Route berechnen
+query <- glue(
+          "SELECT seq, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
+          FROM pgr_dijkstra('SELECT id, source, target, cost, reverse_cost FROM de_edges',
+          {mensa_zw_nearest_node$id}, {mensa_ps_nearest_node$id}, TRUE) as route
+  	      inner join
+  	      de_edges_vertices_pgr as nodes
+  	      on route.node = nodes.id;"
+              )
+
+route_zw_ps <- as_tibble(dbGetQuery(conn=con, statement = query))
+```
+
+
+```{r include=FALSE}
+my_map <- leaflet(width="100%") %>% addTiles()
+```
+
+
+```{r echo=FALSE}
+# lat_values <- c(mensa_zw_nearest_node$lat, mensa_zw_coord$lat)
+# lon_values <- c(mensa_zw_nearest_node$lon, mensa_zw_coord$lon)
+my_map %>% addPolylines(lat = route_zw_ps$lat, lng=route_zw_ps$lon)
+```
