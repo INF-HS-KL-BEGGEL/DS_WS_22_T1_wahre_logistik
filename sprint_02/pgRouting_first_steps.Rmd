@@ -36,7 +36,7 @@ Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölk
 # Routen berechnen
 ## München - Hamburg
 
-```{r}
+```{r include=FALSE}
 query <- "SELECT seq, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
         FROM pgr_dijkstra('SELECT id, source, target, cost, reverse_cost FROM de_edges', 3828327, 3455, TRUE) as route
 	      inner join
@@ -46,22 +46,69 @@ query <- "SELECT seq, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
 route_munich_hamburg <- as_tibble(dbGetQuery(conn=con, statement = query))
 ```
 
-```{r}
+```{r echo=FALSE}
 route_munich_hamburg %>% head()
 ```
 
 
 # Routen visualisieren
 ## München - Hamburg
-```{r}
+```{r include=FALSE}
 lat_values <- route_munich_hamburg$lat
 lon_values <- route_munich_hamburg$lon
 ```
 
-```{r}
+```{r include=FALSE}
 my_map <- leaflet() %>% addTiles()
 ```
 
-```{r}
+```{r echo=FALSE}
 my_map %>% addPolylines(lat=lat_values, lng=lon_values) 
 ```
+
+# Playground
+
+## Den nächstgelegenen Knoten finden
+```{r include=FALSE}
+query <- "select *, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
+          from de_edges_vertices_pgr
+          order by the_geom <-> ST_SetSRID(ST_MakePoint(7.359225,49.260058), 4326)
+          limit 1;"
+
+nearest_node <- dbGetQuery(conn=con, statement = query)
+```
+
+
+```{r include=FALSE}
+my_map <- leaflet() %>% addTiles()
+```
+
+
+```{r echo=FALSE}
+lat_values <- c(nearest_node$lat, 49.260058)
+lon_values <- c(nearest_node$lon, 7.359225)
+my_map %>% addMarkers(lat = lat_values, lng=lon_values)
+```
+
+
+
+## Knoten in einer Bounding Box finden
+```{r include=FALSE}
+query <- "select *, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
+          from de_edges_vertices_pgr
+          where the_geom && ST_MakeEnvelope(7.341614,49.244108,7.395773,49.270605);"
+
+
+bbox_nodes <- as_tibble(dbGetQuery(conn=con, statement = query))
+```
+
+
+```{r include=FALSE}
+my_map <- leaflet() %>% addTiles()
+```
+
+
+```{r echo=FALSE}
+my_map %>% addMarkers(lat = bbox_nodes$lat, lng=bbox_nodes$lon)
+```
+
