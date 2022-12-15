@@ -145,10 +145,7 @@ query <-  glue("
           OR b.source = ' || (SELECT id FROM destination) || ') as box WHERE e.the_geom && box.box',
           array(SELECT id FROM start),
           array(SELECT id FROM destination),
-          TRUE) as route
-          inner join
-  	      de_edges_vertices_pgr as nodes
-  	      on route.node = nodes.id;");
+          TRUE) as route;");
           
 route <- dbGetQuery(conn=con, statement = query)
 toc()
