@@ -226,3 +226,13 @@ Todo
 
 # Todo: vielleicht noch irgendeine mittellange Strecke
 Todo
+
+
+
+# Weiteres Todos
+```{r}
+# Wegen Performance --> Todo: noch anschauen
+# https://docs.pgrouting.org/latest/en/contraction-family.html#contraction
+# sp_delta
+# st_buffer
+```
