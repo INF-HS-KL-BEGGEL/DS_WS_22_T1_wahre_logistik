@@ -1,0 +1,252 @@
+---
+title: "Geodaten Qualitätscheck"
+author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
+output:
+  html_notebook:
+    toc: true
+    toc_float: true
+    code_folding: none
+    number_sections: true
+---
+
+```{r include=FALSE}
+library(DBI)
+library(odbc)
+library(readr)
+library(leaflet)
+library(dplyr)
+library(stringr)
+library(glue)
+library(tictoc)
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+```{r include=FALSE}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname_routing"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+
+
+
+# Ausgangslage/Problem
+Die Geometrie von Kurven wird nicht richtig abgebildet (es fehlen Knoten).
+```{r include=FALSE}
+# Knoten in einer Bounding Box finden
+query <- "select *, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
+          from de_edges_vertices_pgr
+          where the_geom && ST_MakeEnvelope(7.341614,49.244108,7.395773,49.270605);"
+
+
+bbox_nodes <- as_tibble(dbGetQuery(conn=con, statement = query))
+```
+
+```{r echo=FALSE}
+my_map <- leaflet(width="100%") %>% addTiles()
+```
+
+```{r echo=FALSE}
+my_map %>% addCircleMarkers(lat = bbox_nodes$lat, lng=bbox_nodes$lon)
+```
+
+# Weitere Untersuchungen
+
+```{r include=FALSE}
+# Ein paar lon-/lat-Paare zum Testen/Ausprobieren
+# München: 11.558003,48.138399
+# Hamburg: 10.007252,53.551518
+
+# Aachen: 6.083915,50.775408
+# Cottbus: 14.333189,51.760217
+
+# Karlsruhe: 8.392868,49.021435
+# Neubrandenburg: 13.268051,53.557850
+
+# FFM_1: 8.584785,50.095807
+# FFM_2: 8.710613,50.128612
+
+# ZW_1 (Kreuzberg): 7.363136,49.264416
+# ZW_2 (Bubenhausen): 7.351200,49.246048
+# ZW_3 (Hilgard-Center): 7.365502,49.254249
+```
+
+
+
+
+## Contwig - Zweibrücken
+```{r include=FALSE}
+start_coord <- list(lon=7.429188, lat=49.248121)
+destination_coord <- list(lon=7.346141, lat=49.253241)
+```
+
+
+```{r echo=FALSE}
+# Dijkstra mit limitierender Bounding Box (Todo: Sinnvollen Expand-Parameter festlegen (aktuell sind es 0.1 Grad))
+tic()
+
+query <-  glue("
+          -- Find nearest node to start coordinate
+          WITH start as (
+        	  SELECT id
+          	from de_edges_vertices_pgr
+          	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
+          	limit 1
+          ),
+          
+          -- Find nearest node to end coordinate
+          destination as (
+          	SELECT id
+          	from de_edges_vertices_pgr
+          	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
+          	limit 1
+          )
+          
+          -- Calculate the route
+          SELECT seq, path_seq, cost, agg_cost, ST_X(the_geom_node) as lon, ST_Y(the_geom_node) as lat, ST_LengthSpheroid(the_geom_edge, 'SPHEROID[\"GRS_1980\",6378137,298.257222101]') as length_of_edge
+          -- SELECT *
+          FROM pgr_dijkstra('
+            SELECT id, 
+                   source,
+                   target,
+                   cost,
+                   reverse_cost
+            FROM de_edges as e,
+          (SELECT ST_Expand(ST_Extent(the_geom), 0.1) as box FROM de_edges as b
+          WHERE b.source = '|| (SELECT id FROM start) ||'
+          OR b.source = ' || (SELECT id FROM destination) || ') as box WHERE e.the_geom && box.box',
+          array(SELECT id FROM start),
+          array(SELECT id FROM destination),
+          TRUE) as route
+          
+          INNER JOIN
+  	      (select id, the_geom as the_geom_node
+  	      from de_edges_vertices_pgr) as nodes
+  	      on route.node = nodes.id
+  	      
+          INNER JOIN
+          (select id, the_geom as the_geom_edge
+          from de_edges) as edges
+          on route.edge = edges.id
+          ;");
+          
+route <- dbGetQuery(conn=con, statement = query)
+toc()
+```
+
+
+```{r echo=FALSE}
+route %>% head()
+```
+
+```{r include=FALSE}
+my_map <- leaflet() %>% addTiles()
+```
+
+```{r echo=FALSE}
+my_map %>% addPolylines(lat = route$lat, lng=route$lon)
+```
+
+Die Länge der Route beträgt (in Meter):
+```{r echo=FALSE}
+sum(route$length_of_edge)
+```
+Laut Google Maps: 7,3 km
+
+
+
+
+
+
+
+
+
+## Schiffweiler - Kaiserslautern
+```{r include=FALSE}
+#7.131366,49.368328
+# 7.745613,49.437007
+start_coord <- list(lon=7.131366, lat=49.368328)
+destination_coord <- list(lon=7.745613, lat=49.437007)
+```
+
+
+```{r echo=FALSE}
+# Dijkstra mit limitierender Bounding Box (Todo: Sinnvollen Expand-Parameter festlegen (aktuell sind es 0.1 Grad))
+tic()
+
+query <-  glue("
+          -- Find nearest node to start coordinate
+          WITH start as (
+        	  SELECT id
+          	from de_edges_vertices_pgr
+          	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
+          	limit 1
+          ),
+          
+          -- Find nearest node to end coordinate
+          destination as (
+          	SELECT id
+          	from de_edges_vertices_pgr
+          	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
+          	limit 1
+          )
+          
+          -- Calculate the route
+          SELECT seq, path_seq, cost, agg_cost, ST_X(the_geom_node) as lon, ST_Y(the_geom_node) as lat, ST_LengthSpheroid(the_geom_edge, 'SPHEROID[\"GRS_1980\",6378137,298.257222101]') as length_of_edge
+          -- SELECT *
+          FROM pgr_dijkstra('
+            SELECT id, 
+                   source,
+                   target,
+                   cost,
+                   reverse_cost
+            FROM de_edges as e,
+          (SELECT ST_Expand(ST_Extent(the_geom), 0.1) as box FROM de_edges as b
+          WHERE b.source = '|| (SELECT id FROM start) ||'
+          OR b.source = ' || (SELECT id FROM destination) || ') as box WHERE e.the_geom && box.box',
+          array(SELECT id FROM start),
+          array(SELECT id FROM destination),
+          TRUE) as route
+          
+          INNER JOIN
+  	      (select id, the_geom as the_geom_node
+  	      from de_edges_vertices_pgr) as nodes
+  	      on route.node = nodes.id
+  	      
+          INNER JOIN
+          (select id, the_geom as the_geom_edge
+          from de_edges) as edges
+          on route.edge = edges.id
+          ;");
+          
+route <- dbGetQuery(conn=con, statement = query)
+toc()
+```
+
+
+```{r echo=FALSE}
+route %>% head()
+```
+
+```{r include=FALSE}
+my_map <- leaflet() %>% addTiles()
+```
+
+```{r echo=FALSE}
+my_map %>% addPolylines(lat = route$lat, lng=route$lon)
+```
+
+Die Länge der Route beträgt (in Meter):
+```{r echo=FALSE}
+sum(route$length_of_edge)
+```
+Laut Google Maps: 55,3 km
+
+
