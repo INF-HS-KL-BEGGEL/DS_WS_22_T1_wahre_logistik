@@ -86,7 +86,6 @@ query <-  glue("
           )
           
           -- Calculate the route
-          --SELECT seq, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
           SELECT *
           FROM pgr_dijkstra('
           SELECT id,
@@ -131,8 +130,7 @@ query <-  glue("
           )
           
           -- Calculate the route
-          SELECT *, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
-          -- SELECT *
+          SELECT *
           FROM pgr_dijkstra('
             SELECT id, 
                    source,
@@ -179,7 +177,6 @@ query <-  glue("
           )
           
           -- Calculate the route
-          --SELECT seq, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
           SELECT *
           FROM pgr_aStar(
           'SELECT id,
