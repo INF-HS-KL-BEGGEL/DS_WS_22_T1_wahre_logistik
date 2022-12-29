@@ -150,7 +150,46 @@ toc()
 ```
 
 ## Bidirektionaler Dijkstra mit limitierender Bounding Box
-Todo
+```{r echo=FALSE}
+# Dijkstra mit limitierender Bounding Box (Todo: Sinnvollen Expand-Parameter festlegen (aktuell sind es 0.1 Grad))
+tic()
+
+query <-  glue("
+          -- Find nearest node to start coordinate
+          WITH start as (
+        	  SELECT id
+          	from de_edges_vertices_pgr
+          	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
+          	limit 1
+          ),
+          
+          -- Find nearest node to end coordinate
+          destination as (
+          	SELECT id
+          	from de_edges_vertices_pgr
+          	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
+          	limit 1
+          )
+          
+          -- Calculate the route
+          SELECT *
+          FROM pgr_bdDijkstra('
+            SELECT id, 
+                   source,
+                   target,
+                   cost,
+                   reverse_cost
+            FROM de_edges as e,
+          (SELECT ST_Expand(ST_Extent(the_geom), 0.1) as box FROM de_edges as b
+          WHERE b.source = '|| (SELECT id FROM start) ||'
+          OR b.source = ' || (SELECT id FROM destination) || ') as box WHERE e.the_geom && box.box',
+          array(SELECT id FROM start),
+          array(SELECT id FROM destination),
+          TRUE) as route;");
+          
+route <- dbGetQuery(conn=con, statement = query)
+toc()
+```
 
 
 # A-Star mit limitierender Bounding Box
