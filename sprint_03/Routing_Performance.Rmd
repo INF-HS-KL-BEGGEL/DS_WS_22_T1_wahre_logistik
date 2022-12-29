@@ -382,6 +382,41 @@ route <- bd_a_star_limit_bbox(start_coord, destination_coord)
 toc()
 ```
 
+# Erstellung eines Dreiecks
+```{r include=FALSE}
+# Knoten in einer Bounding Box finden
+# query <- "select *, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
+#           from de_edges_vertices_pgr
+#           where the_geom && ST_MakeEnvelope(7.341614,49.244108,7.395773,49.270605);"
+
+
+query <- "select *, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
+          from de_edges_vertices_pgr
+          where ST_Intersects(
+            the_geom,
+            ST_SetSRID(
+              ST_MakePolygon( 
+                ST_GeomFromText(
+                  'LINESTRING(7.741861841582818 49.44834763688357, 9.001273571241796 49.33229499214451, 9.074212474504321 49.96406758772778,                                  7.741861841582818 49.44834763688357)'
+                )
+              ),
+              4326)
+            );"
+
+nodes <- dbGetQuery(conn=con, statement = query)
+```
+
+```{r include=FALSE}
+my_map <- leaflet(width="100%") %>% addTiles()
+```
+
+```{r echo=FALSE}
+my_map %>% addCircleMarkers(lat = nodes$lat, lng=nodes$lon)
+```
+
+
+
+
 
 
 # Weiteres Todos
