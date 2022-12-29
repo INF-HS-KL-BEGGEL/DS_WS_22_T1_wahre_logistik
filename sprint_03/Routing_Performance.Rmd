@@ -203,8 +203,57 @@ toc()
 ```
 
 
-## Bidirektionaler A-Star
-Todo
+## Bidirektionaler A-Star mit limitierender Bounding Box
+```{r echo=FALSE}
+# A-Star mit limitierender Bounding Box
+# Todo: Noch über die anderen Options Gedanken machen (z. B. Heuristik)
+tic()
+
+query <-  glue("
+          -- Find nearest node to start coordinate
+          WITH start as (
+        	  SELECT id
+          	from de_edges_vertices_pgr
+          	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
+          	limit 1
+          ),
+          
+          -- Find nearest node to end coordinate
+          destination as (
+          	SELECT id
+          	from de_edges_vertices_pgr
+          	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
+          	limit 1
+          )
+          
+          -- Calculate the route
+          SELECT *
+          FROM pgr_bdAstar(
+          'SELECT id,
+                  source,
+                  target,
+                  cost,
+                  reverse_cost,
+                  x1,
+                  y1,
+                  x2,
+                  y2
+          FROM de_edges as e,
+          (SELECT ST_Expand(ST_Extent(the_geom), 0.1) as box FROM de_edges as b
+          WHERE b.source = '|| (SELECT id FROM start) ||'
+          OR b.source = ' || (SELECT id FROM destination) || ') as box WHERE e.the_geom && box.box',
+          array(SELECT id FROM start),
+          array(SELECT id FROM destination),
+          TRUE) as route
+          ");
+          
+route <- dbGetQuery(conn=con, statement = query)
+
+toc()
+```
+
+
+
 
 
 ## Todo: vielleicht noch andere Algorithmen ausprobieren
