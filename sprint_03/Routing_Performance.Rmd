@@ -228,7 +228,7 @@ query <-  glue("
                   y1,
                   x2,
                   y2
-          FROM de_edges as e,
+          FROM de_edges as e',
           array(SELECT id FROM start),
           array(SELECT id FROM destination),
           TRUE) as route
