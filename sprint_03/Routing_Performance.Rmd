@@ -149,9 +149,10 @@ route <- dbGetQuery(conn=con, statement = query)
 toc()
 ```
 
+
 ## Bidirektionaler Dijkstra mit limitierender Bounding Box
 ```{r echo=FALSE}
-# Dijkstra mit limitierender Bounding Box (Todo: Sinnvollen Expand-Parameter festlegen (aktuell sind es 0.1 Grad))
+# Bidirektionaler Dijkstra mit limitierender Bounding Box (Todo: Sinnvollen Expand-Parameter festlegen (aktuell sind es 0.1 Grad))
 tic()
 
 query <-  glue("
@@ -188,6 +189,53 @@ query <-  glue("
           TRUE) as route;");
           
 route <- dbGetQuery(conn=con, statement = query)
+toc()
+```
+
+
+# A-Star
+```{r echo=FALSE}
+# A-Star ("Normal")
+# Todo: Noch über die anderen Options Gedanken machen (z. B. Heuristik)
+tic()
+
+query <-  glue("
+          -- Find nearest node to start coordinate
+          WITH start as (
+        	  SELECT id
+          	from de_edges_vertices_pgr
+          	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
+          	limit 1
+          ),
+          
+          -- Find nearest node to end coordinate
+          destination as (
+          	SELECT id
+          	from de_edges_vertices_pgr
+          	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
+          	limit 1
+          )
+          
+          -- Calculate the route
+          SELECT *
+          FROM pgr_aStar(
+          'SELECT id,
+                  source,
+                  target,
+                  cost,
+                  reverse_cost,
+                  x1,
+                  y1,
+                  x2,
+                  y2
+          FROM de_edges as e,
+          array(SELECT id FROM start),
+          array(SELECT id FROM destination),
+          TRUE) as route
+          ");
+          
+route <- dbGetQuery(conn=con, statement = query)
+
 toc()
 ```
 
