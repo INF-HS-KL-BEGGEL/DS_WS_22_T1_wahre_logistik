@@ -1,0 +1,561 @@
+---
+title: "Routing Performance"
+author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
+output:
+  html_notebook:
+    toc: true
+    toc_float: true
+    code_folding: none
+    number_sections: true
+---
+
+
+
+```{r include=FALSE}
+library(DBI)
+library(odbc)
+library(readr)
+library(leaflet)
+library(dplyr)
+library(stringr)
+library(glue)
+library(tictoc)
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+```{r include=FALSE}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname_routing"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+
+
+# Achtung
+Diese Dokument ist ein erster Wurf. Bitte alle Todos beachten (auch im Code)
+
+
+# Routing-Funktionen
+## Dijkstra ("Normal")
+```{r echo=FALSE}
+# Dijkstra ("Normal")
+dijkstra <- function(start_coord, destination_coord) {
+  query <-  glue("
+            -- Find nearest node to start coordinate
+            WITH start as (
+          	  SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
+            	limit 1
+            ),
+            
+            -- Find nearest node to end coordinate
+            destination as (
+            	SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
+            	limit 1
+            )
+            
+            -- Calculate the route
+            SELECT *
+            FROM pgr_dijkstra('
+            SELECT id,
+                  source,
+                  target,
+                  cost,
+                  reverse_cost
+            FROM de_edges',
+            array(SELECT id FROM start),
+            array(SELECT id FROM destination),
+            TRUE) as route
+            ");
+            
+  return(dbGetQuery(conn=con, statement = query))
+}
+```
+
+
+## Dijsktra mit limitierender Bounding Box
+Die Bounding Box, in der nach Routen gesucht wird, ist bei diesem Ansatz beschränkt.
+```{r echo=FALSE}
+dijkstra_limit_bbox <- function(start_coord, destination_coord) {
+  # Dijkstra mit limitierender Bounding Box (Todo: Sinnvollen Expand-Parameter festlegen (aktuell sind es 0.1 Grad))
+  query <-  glue("
+            -- Find nearest node to start coordinate
+            WITH start as (
+          	  SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
+            	limit 1
+            ),
+            
+            -- Find nearest node to end coordinate
+            destination as (
+            	SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
+            	limit 1
+            )
+            
+            -- Calculate the route
+            SELECT *
+            FROM pgr_dijkstra('
+              SELECT id, 
+                     source,
+                     target,
+                     cost,
+                     reverse_cost
+              FROM de_edges as e,
+            (SELECT ST_Expand(ST_Extent(the_geom), 0.1) as box FROM de_edges as b
+            WHERE b.source = '|| (SELECT id FROM start) ||'
+            OR b.source = ' || (SELECT id FROM destination) || ') as box WHERE e.the_geom && box.box',
+            array(SELECT id FROM start),
+            array(SELECT id FROM destination),
+            TRUE) as route;");
+            
+  return(dbGetQuery(conn=con, statement = query))
+}
+```
+
+
+## Bidirektionaler Dijkstra mit limitierender Bounding Box
+```{r echo=FALSE}
+bd_dijkstra_limit_bbox <- function(start_coord, destination_coord) {
+  # Bidirektionaler Dijkstra mit limitierender Bounding Box (Todo: Sinnvollen Expand-Parameter festlegen (aktuell sind es 0.1 Grad))
+  query <-  glue("
+            -- Find nearest node to start coordinate
+            WITH start as (
+          	  SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
+            	limit 1
+            ),
+            
+            -- Find nearest node to end coordinate
+            destination as (
+            	SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
+            	limit 1
+            )
+            
+            -- Calculate the route
+            SELECT *
+            FROM pgr_bdDijkstra('
+              SELECT id, 
+                     source,
+                     target,
+                     cost,
+                     reverse_cost
+              FROM de_edges as e,
+            (SELECT ST_Expand(ST_Extent(the_geom), 0.1) as box FROM de_edges as b
+            WHERE b.source = '|| (SELECT id FROM start) ||'
+            OR b.source = ' || (SELECT id FROM destination) || ') as box WHERE e.the_geom && box.box',
+            array(SELECT id FROM start),
+            array(SELECT id FROM destination),
+            TRUE) as route;");
+            
+  return(dbGetQuery(conn=con, statement = query))
+}
+```
+
+
+## A-Star
+```{r echo=FALSE}
+a_star <- function(start_coord, destination_coord) {
+  # A-Star ("Normal")
+  # Todo: Noch über die anderen Options Gedanken machen (z. B. Heuristik)
+  query <-  glue("
+            -- Find nearest node to start coordinate
+            WITH start as (
+          	  SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
+            	limit 1
+            ),
+            
+            -- Find nearest node to end coordinate
+            destination as (
+            	SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
+            	limit 1
+            )
+            
+            -- Calculate the route
+            SELECT *
+            FROM pgr_aStar(
+            'SELECT id,
+                    source,
+                    target,
+                    cost,
+                    reverse_cost,
+                    x1,
+                    y1,
+                    x2,
+                    y2
+            FROM de_edges as e',
+            array(SELECT id FROM start),
+            array(SELECT id FROM destination),
+            TRUE) as route
+            ");
+            
+  return(dbGetQuery(conn=con, statement = query))
+}
+```
+
+
+## A-Star mit limitierender Bounding Box
+```{r echo=FALSE}
+a_star_limit_bbox <- function(start_coord, destination_coord) {
+  # A-Star mit limitierender Bounding Box
+  # Todo: Noch über die anderen Options Gedanken machen (z. B. Heuristik)
+  query <-  glue("
+            -- Find nearest node to start coordinate
+            WITH start as (
+          	  SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
+            	limit 1
+            ),
+            
+            -- Find nearest node to end coordinate
+            destination as (
+            	SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
+            	limit 1
+            )
+            
+            -- Calculate the route
+            SELECT *
+            FROM pgr_aStar(
+            'SELECT id,
+                    source,
+                    target,
+                    cost,
+                    reverse_cost,
+                    x1,
+                    y1,
+                    x2,
+                    y2
+            FROM de_edges as e,
+            (SELECT ST_Expand(ST_Extent(the_geom), 0.1) as box FROM de_edges as b
+            WHERE b.source = '|| (SELECT id FROM start) ||'
+            OR b.source = ' || (SELECT id FROM destination) || ') as box WHERE e.the_geom && box.box',
+            array(SELECT id FROM start),
+            array(SELECT id FROM destination),
+            TRUE) as route
+            ");
+            
+  return(dbGetQuery(conn=con, statement = query))
+}
+```
+
+
+## Bidirektionaler A-Star mit limitierender Bounding Box
+```{r echo=FALSE}
+bd_a_star_limit_bbox <- function(start_coord, destination_coord) {
+  # A-Star mit limitierender Bounding Box
+  # Todo: Noch über die anderen Options Gedanken machen (z. B. Heuristik)
+  query <-  glue("
+            -- Find nearest node to start coordinate
+            WITH start as (
+          	  SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
+            	limit 1
+            ),
+            
+            -- Find nearest node to end coordinate
+            destination as (
+            	SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
+            	limit 1
+            )
+            
+            -- Calculate the route
+            SELECT *
+            FROM pgr_bdAstar(
+            'SELECT id,
+                    source,
+                    target,
+                    cost,
+                    reverse_cost,
+                    x1,
+                    y1,
+                    x2,
+                    y2
+            FROM de_edges as e,
+            (SELECT ST_Expand(ST_Extent(the_geom), 0.1) as box FROM de_edges as b
+            WHERE b.source = '|| (SELECT id FROM start) ||'
+            OR b.source = ' || (SELECT id FROM destination) || ') as box WHERE e.the_geom && box.box',
+            array(SELECT id FROM start),
+            array(SELECT id FROM destination),
+            TRUE) as route
+            ");
+            
+  return(dbGetQuery(conn=con, statement = query))
+}
+```
+
+
+# Tests
+```{r include=FALSE}
+# Ein paar lon-/lat-Paare zum Testen/Ausprobieren
+# München: 11.558003,48.138399
+# Hamburg: 10.007252,53.551518
+
+# Aachen: 6.083915,50.775408
+# Cottbus: 14.333189,51.760217
+
+# FFM_1: 8.584785,50.095807
+# FFM_2: 8.710613,50.128612
+
+# ZW_1 (Kreuzberg): 7.363136,49.264416
+# ZW_2 (Bubenhausen): 7.351200,49.246048
+# ZW_3 (Hilgard-Center): 7.365502,49.254249
+
+# Todo: vielleicht noch irgendeine mittellange Strecke
+```
+
+
+## München-Hamburg
+```{r include=FALSE}
+start_coord <- list(lon=11.558003, lat=48.138399) # München
+destination_coord <- list(lon=10.007252, lat=53.551518) # Hamburg
+```
+
+### Dijkstra
+```{r echo=False}
+tic()
+route <- dijkstra(start_coord, destination_coord)
+toc()
+```
+
+
+### Dijkstra mit limitierender Bounding Box
+```{r echo=False}
+tic()
+route <- dijkstra_limit_bbox(start_coord, destination_coord)
+toc()
+```
+
+
+### Bidirektionaler Dijkstra mit limitierender Bounding Box
+```{r echo=False}
+tic()
+route <- bd_dijkstra_limit_bbox(start_coord, destination_coord)
+toc()
+```
+
+
+### A-Star
+```{r echo=False}
+tic()
+route <- a_star(start_coord, destination_coord)
+toc()
+```
+
+
+### A-Star mit limitierender Bounding Box
+```{r echo=False}
+tic()
+route <- a_star_limit_bbox(start_coord, destination_coord)
+toc()
+```
+
+
+### Bidirektionaler A-Star mit limitierender Bounding Box
+```{r echo=False}
+tic()
+route <- bd_a_star_limit_bbox(start_coord, destination_coord)
+toc()
+```
+
+# Erstellung eines Dreiecks
+```{r include=FALSE}
+# Knoten in einer Bounding Box finden
+# query <- "select *, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
+#           from de_edges_vertices_pgr
+#           where the_geom && ST_MakeEnvelope(7.341614,49.244108,7.395773,49.270605);"
+
+
+query <- "select *, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
+          from de_edges_vertices_pgr
+          where ST_Intersects(
+            the_geom,
+            ST_SetSRID(
+              ST_MakePolygon( 
+                ST_GeomFromText(
+                  'LINESTRING(7.741861841582818 49.44834763688357, 9.001273571241796 49.33229499214451, 9.074212474504321 49.96406758772778,                                  7.741861841582818 49.44834763688357)'
+                )
+              ),
+              4326)
+            );"
+
+nodes <- dbGetQuery(conn=con, statement = query)
+```
+
+```{r include=FALSE}
+my_map <- leaflet(width="100%") %>% addTiles()
+```
+
+```{r echo=FALSE}
+my_map %>% addCircleMarkers(lat = nodes$lat, lng=nodes$lon)
+```
+
+
+
+# Erstellung einer schrägen Bounding Box
+```{r include=FALSE}
+start_coord <- list(lon=7.764833437145995, lat=49.44295526927124)
+destination_coord <- list(lon=8.1620463672661, lat=49.680391160806266)
+```
+
+
+```{r include=FALSE}
+get_diagonal_bbox <- function(start_coord_vec, destination_coord_vec, width_factor=0.5) {
+  v <- c(
+          (-1) * (destination_coord_vec[1] - start_coord_vec[1]), # delta lon
+          destination_coord_vec[2] - start_coord_vec[2] # delta lat
+        )
+  polygon <- list(start_coord_vec + width_factor*v, destination_coord_vec + width_factor*v, destination_coord_vec - width_factor*v, start_coord_vec -width_factor*v, start_coord_vec + width_factor*v)
+  return(polygon)
+}
+
+
+
+polygon_to_linestring <- function(polygon){
+  linestring <- glue("LINESTRING({polygon[[1]][1]} {polygon[[1]][2]},")
+  for(i in 2:(length(polygon)-1)){
+    lon <- polygon[[i]][1]
+    lat <- polygon[[i]][2]
+    linestring <- glue("{linestring} {lon} {lat},")
+  }
+  linestring <- glue("{linestring} {polygon[[length(polygon)]][1]} {polygon[[length(polygon)]][2]})")
+  return(linestring)
+}
+```
+
+
+```{r include=FALSE}
+polygon <- get_diagonal_bbox(
+  start_coord_vec = c(start_coord$lon, start_coord$lat),
+  destination_coord_vec = c(destination_coord$lon, destination_coord$lat),
+  width_factor = 0.25
+  )
+```
+
+
+```{r include=FALSE}
+polygon_as_linestring <- polygon_to_linestring(polygon)
+
+query <- glue("select *, ST_X(the_geom) as lon, ST_Y(the_geom) as lat
+          from de_edges_vertices_pgr
+          where ST_Intersects(
+            the_geom,
+            ST_SetSRID(
+              ST_MakePolygon( 
+                ST_GeomFromText(
+                  '{polygon_as_linestring}'
+                )
+              ),
+              4326)
+            );")
+
+nodes <- dbGetQuery(conn=con, statement = query)
+```
+
+
+
+```{r echo=FALSE}
+polygon_lats = c()
+polygon_lons = c()
+for(i in 1:length(polygon)){
+  polygon_lons = c(polygon_lons, polygon[[i]][1])
+  polygon_lats = c(polygon_lats, polygon[[i]][2])
+}
+
+leaflet(width="100%") %>%
+  addTiles() %>% 
+  addCircleMarkers(lng = c(start_coord$lon, destination_coord$lon), lat = c(start_coord$lat, destination_coord$lat), color="red", weight=7, opacity=1) %>%
+  addPolylines(lng = c(start_coord$lon, destination_coord$lon), lat = c(start_coord$lat, destination_coord$lat), color="red", weight=7, opacity=1) %>%
+  addPolygons(lng = polygon_lons, lat = polygon_lats, color="orange") %>% 
+  addCircleMarkers(lng = nodes$lon, lat = nodes$lat, fill=FALSE, weight=1.5, opacity = 0.05) 
+```
+
+
+```{r}
+cities <- dbGetQuery(conn=con, statement = "select * from cities_de")
+kunden <- dbGetQuery(conn=con, statement = "select * from kundenstammdaten")
+```
+
+```{r}
+cities
+kunden
+
+cxk <- crossing(kunden, cities)
+```
+
+```{r}
+cxk
+
+cxk <- cxk %>% mutate(distance=sqrt((laengengrad-lng)^2 + (breitengrad-lat)^2))
+
+cxk
+
+```
+
+```{r}
+cxk <- cxk %>%  group_by(kndnr) %>%  slice_min(distance, with_ties = FALSE) %>% arrange(desc(distance))
+
+scxk <- cxk %>% select(kndnr, cid)
+
+scxk
+```
+
+```{r}
+for(i in 1:nrow(scxk)) {
+  res <- dbSendQuery(con, paste("UPDATE kundenstammdaten SET city_id=",pull(scxk[i,2])," WHERE kndnr='",pull(scxk[i,1]),"';", sep=""))
+  dbClearResult(res)
+  #print(paste(i, "done"))
+}
+```
+
+```{r}
+orthodrome_meters <- function(lat1, long1, lat2, long2) {
+  
+  lat1_rad <- lat1*pi/180
+  long1_rad <- long1*pi/180
+  lat2_rad <- lat2*pi/180
+  long2_rad <- long2*pi/180
+  
+  zeta <- acos(sin(lat1_rad)*sin(lat2_rad)+cos(lat1_rad)*cos(lat2_rad)*cos(long2_rad-long1_rad))
+  print(zeta)
+  distance_earth <- zeta*6370000
+  
+  return(distance_earth)
+}
+
+# #Test: Ergebnis sollte ca.8918000m
+# orthodrome(52.517, 13.40, 35.7, 139.767)
+```
+
+
+# Weiteres Todos
+```{r}
+# Wegen Performance --> Todo: noch anschauen
+# https://docs.pgrouting.org/latest/en/contraction-family.html#contraction
+# sp_delta
+# st_buffer
+```
