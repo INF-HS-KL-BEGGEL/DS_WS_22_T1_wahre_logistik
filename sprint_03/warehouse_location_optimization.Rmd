@@ -51,6 +51,32 @@ Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölk
 
 
 
+# Routing-Funktion
+```{r}
+calculate_routing_results <- function(start_long, start_lat, end_long, end_lat){
+  # Diese Funktion erledigt die folgenden Schritte (innerhalb einer einzigen Query):
+  # 1. Es werden die nächstgelegenden Nodes zu start = (start_long, start_lat) und end = (end_long, end_lat) bestimmt. Diese nennen wir im Folgenden proj_start und proj_end.
+  # 2. Es werden die Routen proj_start --> proj_end und proj_end --> proj_start berechnet.
+  # 3. Es werden die Längen (in Kilometer) dieser beiden Routen berechnet.
+  
+  # Return: list(
+                  # proj_start_long,
+                  # proj_start_lat,
+                  # proj_end_long,
+                  # proj_end_lat,
+                  # km_start_end,
+                  # km_end_start
+                # )
+  
+  
+  # Todo: Implementierung
+  stop("The function calculate_routing_results is not yet implemented!")
+}
+```
+
+
+
+
 # Routing (Todo: bessere Überschrift)
 ## Bidirektionaler A-Star mit limitierender Bounding Box
 ```{r echo=FALSE}
