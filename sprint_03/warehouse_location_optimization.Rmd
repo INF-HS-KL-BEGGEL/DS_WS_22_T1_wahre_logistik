@@ -51,6 +51,32 @@ Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölk
 
 
 
+
+# Raster
+```{r}
+de_min_long <- 5.8630797
+de_max_long <- 15.0644589 
+de_min_lat <- 47.2842067
+de_max_lat <- 55.0458651
+
+# Todo: length.out muss noch jeweils sinnvoll gewählt werden (es muss nicht in beiden Richtungen gleich sein)
+long_intervall <- seq(from=de_min_long, to=de_max_long, length.out=6)
+lat_intervall <- seq(from=de_min_lat, to=de_max_lat, length.out=10)
+
+raster <- expand.grid(long=long_intervall, lat=lat_intervall)
+```
+
+
+
+```{r}
+leaflet(width="100%") %>%
+  addTiles() %>% 
+  addCircleMarkers(lng = raster$long, lat = raster$lat)
+```
+
+
+
+
 # Routing-Funktion
 ```{r}
 calculate_routing_results <- function(start_long, start_lat, end_long, end_lat){
