@@ -1,0 +1,100 @@
+---
+title: "Standort für das Zentrallager"
+author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
+output:
+  html_notebook:
+    toc: true
+    toc_float: true
+    code_folding: none
+    number_sections: true
+---
+
+
+
+```{r include=FALSE}
+library(DBI)
+library(odbc)
+library(readr)
+library(leaflet)
+library(dplyr)
+library(stringr)
+library(glue)
+library(tictoc)
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+```{r include=FALSE}
+# Verbindung zu unserer Datenbank für das Routing (Name = "routing_db")
+con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname_routing"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+
+# Verbindung zu unserer Haupt-Datenbank (Name = "postgres")
+con_to_normal_db <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+
+
+
+
+# Routing (Todo: bessere Überschrift)
+## Bidirektionaler A-Star mit limitierender Bounding Box
+```{r echo=FALSE}
+bd_a_star_limit_bbox <- function(start_coord, destination_coord) {
+  # A-Star mit limitierender Bounding Box
+  # Todo: Noch über die anderen Options Gedanken machen (z. B. Heuristik)
+  query <-  glue("
+            -- Find nearest node to start coordinate
+            WITH start as (
+          	  SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
+            	limit 1
+            ),
+            
+            -- Find nearest node to end coordinate
+            destination as (
+            	SELECT id
+            	from de_edges_vertices_pgr
+            	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
+            	limit 1
+            )
+            
+            -- Calculate the route
+            SELECT *
+            FROM pgr_bdAstar(
+            'SELECT id,
+                    source,
+                    target,
+                    cost,
+                    reverse_cost,
+                    x1,
+                    y1,
+                    x2,
+                    y2
+            FROM de_edges as e,
+            (SELECT ST_Expand(ST_Extent(the_geom), 0.1) as box FROM de_edges as b
+            WHERE b.source = '|| (SELECT id FROM start) ||'
+            OR b.source = ' || (SELECT id FROM destination) || ') as box WHERE e.the_geom && box.box',
+            array(SELECT id FROM start),
+            array(SELECT id FROM destination),
+            TRUE) as route
+            ");
+            
+  return(dbGetQuery(conn=con, statement = query))
+}
+```
