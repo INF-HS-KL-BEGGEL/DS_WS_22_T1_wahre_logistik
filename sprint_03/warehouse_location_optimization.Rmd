@@ -52,8 +52,8 @@ Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölk
 
 
 
-# Raster
-```{r}
+# Raster und potenzielle Lagerstandorte
+```{r include=FALSE}
 # Funktion zum Berechnen der Distanz zwischen zwei Punkten (sphärische Geometrie wird berücksichtigt)
 orthodrome_meters <- function(lat1, long1, lat2, long2) {
   lat1_rad <- lat1*pi/180
@@ -73,7 +73,7 @@ orthodrome_meters <- function(lat1, long1, lat2, long2) {
 
 
 
-```{r}
+```{r include=FALSE}
 # Bildung eines Rasters Variante 3
 # Die Verjüngung der Erde (zu den Polen hin) wird berücksichtigt. Es wird (bis auf Rundungsfehler) sichergestellt, dass der Abstand benachbarter Rasterpunkte in lat- und long-Richtung überall gleich ist.
 
@@ -106,7 +106,7 @@ raster <- raster[-1,] # Zeile mit NAs (wegen leerer Initialisierung) entfernen
 
 
 
-```{r}
+```{r echo=FALSE}
 # Visualisiere die Punkte des oben erstellten Rasters
 leaflet(width="100%") %>%
   addTiles() %>% 
@@ -115,7 +115,7 @@ leaflet(width="100%") %>%
 
 
 
-```{sql connection=con_to_routing_db}
+```{sql connection=con_to_routing_db, include=FALSE}
 -- Hilfstabelle "tmp_raster_points" anlegen, in die die Raster-Punkte (aus raster) 1:1 reingeschrieben werden sollen (siehe nächster Code Chunk).
 DROP TABLE IF EXISTS tmp_raster_points;
 
@@ -127,13 +127,13 @@ CREATE TABLE tmp_raster_points (
 
 
 
-```{r}
+```{r include=FALSE}
 # Schreibe die Raster-Punkte 1:1 in die Hilfstabelle "tmp_raster_points"
 dbAppendTable(conn=con_to_routing_db, name = "tmp_raster_points", value=raster)
 ```
 
 
-```{r}
+```{r echo=FALSE}
 # Zum Testen
 # tmp_raster <- dbGetQuery(conn = con_to_routing_db, statement="select * from tmp_raster_points")
 # leaflet(width="100%") %>%
@@ -142,7 +142,7 @@ dbAppendTable(conn=con_to_routing_db, name = "tmp_raster_points", value=raster)
 ```
 
 
-```{sql connection=con_to_routing_db}
+```{sql connection=con_to_routing_db, include=FALSE}
 -- Anlegen der Tabelle für die potenziellen Lagerstandorte
 DROP TABLE IF EXISTS potential_warehouse_locations;
 
@@ -158,7 +158,7 @@ CREATE TABLE potential_warehouse_locations (
 
 
 
-```{sql connection=con_to_routing_db}
+```{sql connection=con_to_routing_db, include=FALSE}
 -- Hier passieren die folgenden Schritte:
 -- 1. Für jeden unserer Rasterpunkte suchen wir den nächstgelegenden Knoten aus unserer routing_db.
 -- 2. Ein paar Aliase einführen.
@@ -180,6 +180,14 @@ CROSS JOIN LATERAL (
 ```
 
 
+
+```{r echo=FALSE}
+potential_warehouse_locations <- dbGetQuery(conn = con_to_routing_db, statement = "select * from potential_warehouse_locations")
+
+leaflet(width="100%") %>%
+  addTiles() %>%
+  addCircleMarkers(lng = potential_warehouse_locations$proj_long, lat = potential_warehouse_locations$proj_lat)
+```
 
 
 
