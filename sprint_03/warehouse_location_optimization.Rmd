@@ -110,7 +110,9 @@ raster <- raster[-1,] # Zeile mit NAs (wegen leerer Initialisierung) entfernen
 # Visualisiere die Punkte des oben erstellten Rasters
 leaflet(width = "100%", height = "700px") %>%
   addTiles() %>% 
-  addCircleMarkers(lng = raster$long, lat = raster$lat)
+  addCircleMarkers(lng = raster$long,
+                   lat = raster$lat,
+                   radius = 6)
 ```
 
 
@@ -186,7 +188,9 @@ potential_warehouse_locations <- dbGetQuery(conn = con_to_routing_db, statement 
 
 leaflet(width = "100%", height = "700px") %>%
   addTiles() %>%
-  addCircleMarkers(lng = potential_warehouse_locations$proj_long, lat = potential_warehouse_locations$proj_lat)
+  addCircleMarkers(lng = potential_warehouse_locations$proj_long,
+                   lat = potential_warehouse_locations$proj_lat,
+                   radius = 6)
 ```
 
 
