@@ -191,6 +191,40 @@ leaflet(width = "100%", height = "700px") %>%
 
 
 
+# Kunden-Cluster
+```{r include=FALSE}
+# Unsere Kunden sind schon "natürlich" geclustered. Daher genügt es, einfach die unterschiedlichen Kombinationen aus Längen- und Breitengrad zu selektieren.
+
+query <- "
+            SELECT DISTINCT ON(laengengrad, breitengrad) 
+          					laengengrad as long,
+          					breitengrad as lat
+            FROM kundenstammdaten;
+         "
+
+customer_cluster_coordinates <- dbGetQuery(conn = con_to_normal_db, statement = query)
+```
+
+
+```{r echo=FALSE}
+# customer_cluster_coordinates %>% nrow()
+```
+
+
+```{r echo=FALSE}
+leaflet(width = "100%", height = "700px") %>%
+  addTiles() %>% 
+  addCircleMarkers(lng = customer_cluster_coordinates$long,
+                   lat = customer_cluster_coordinates$lat,
+                   radius = 6)
+```
+
+
+
+
+
+
+
 # Routing-Funktion
 ```{r}
 calculate_routing_results <- function(start_long, start_lat, end_long, end_lat){
