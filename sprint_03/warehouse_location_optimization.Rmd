@@ -54,6 +54,7 @@ Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölk
 
 # Raster
 ```{r}
+# Funktion zum Berechnen der Distanz zwischen zwei Punkten (sphärische Geometrie wird berücksichtigt)
 orthodrome_meters <- function(lat1, long1, lat2, long2) {
   lat1_rad <- lat1*pi/180
   long1_rad <- long1*pi/180
@@ -106,6 +107,7 @@ raster <- raster[-1,] # Zeile mit NAs (wegen leerer Initialisierung) entfernen
 
 
 ```{r}
+# Visualisiere die Punkte des oben erstellten Rasters
 leaflet(width="100%") %>%
   addTiles() %>% 
   addCircleMarkers(lng = raster$long, lat = raster$lat)
@@ -114,6 +116,7 @@ leaflet(width="100%") %>%
 
 
 ```{sql connection=con_to_routing_db}
+# Hilfstabelle "tmp_raster_points" anlegen, in die die Raster-Punkte (aus raster) 1:1 reingeschrieben werden sollen (siehe nächster Code Chunk).
 DROP TABLE IF EXISTS tmp_raster_points;
 
 CREATE TABLE tmp_raster_points (
@@ -125,6 +128,7 @@ CREATE TABLE tmp_raster_points (
 
 
 ```{r}
+# Schreibe die Raster-Punkte 1:1 in die Hilfstabelle "tmp_raster_points"
 dbAppendTable(conn=con_to_routing_db, name = "tmp_raster_points", value=raster)
 ```
 
@@ -136,6 +140,46 @@ dbAppendTable(conn=con_to_routing_db, name = "tmp_raster_points", value=raster)
 #   addTiles() %>% 
 #   addCircleMarkers(lng = tmp_raster$long, lat = tmp_raster$lat)
 ```
+
+
+```{sql connection=con_to_routing_db}
+# Anlegen der Tabelle für die potenziellen Lagerstandorte
+DROP TABLE IF EXISTS potential_warehouse_locations;
+
+CREATE TABLE potential_warehouse_locations (
+  proj_vertice_id integer, -- Todo: Eigentlich ja primary key
+	proj_lat double precision NOT NULL,
+	proj_long double precision NOT NULL,
+	proj_the_geom geometry NOT NULL,
+	original_lat double precision NOT NULL,
+	original_long double precision NOT NULL
+);
+```
+
+
+
+```{sql connection=con_to_routing_db}
+# Hier passieren die folgenden Schritte:
+# 1. Für jeden unserer Rasterpunkte suchen wir den nächstgelegenden Knoten aus unserer routing_db.
+# 2. Ein paar Aliase einführen.
+# 3. Das Ergebnis schreiben wir in die Tabelle "potential_warehouse_locations"
+INSERT INTO potential_warehouse_locations(proj_vertice_id, proj_long, proj_lat, proj_the_geom, original_lat, original_long)
+SELECT DISTINCT ON (id)
+        id AS proj_vertice_id, proj_long, proj_lat, the_geom AS proj_the_geom, lat AS original_lat, long AS original_long
+FROM tmp_raster_points AS raster_points
+CROSS JOIN LATERAL (
+	SELECT id,
+			the_geom,
+			ST_X(the_geom) AS proj_long,
+			ST_Y(the_geom) AS proj_lat,
+			vertices.the_geom <-> ST_SetSRID(ST_MakePoint(raster_points.long, raster_points.lat), 4326) AS dist
+	FROM de_edges_vertices_pgr AS vertices
+	ORDER BY dist
+	LIMIT 1
+)  AS vertices;
+```
+
+
 
 
 
