@@ -113,11 +113,29 @@ leaflet(width="100%") %>%
 
 
 
+```{sql connection=con_to_routing_db}
+DROP TABLE IF EXISTS tmp_raster_points;
+
+CREATE TABLE tmp_raster_points (
+	lat double precision NOT NULL,
+	long double precision NOT NULL
+);
+```
 
 
 
+```{r}
+dbAppendTable(conn=con_to_routing_db, name = "tmp_raster_points", value=raster)
+```
 
 
+```{r}
+# Zum Testen
+# tmp_raster <- dbGetQuery(conn = con_to_routing_db, statement="select * from tmp_raster_points")
+# leaflet(width="100%") %>%
+#   addTiles() %>% 
+#   addCircleMarkers(lng = tmp_raster$long, lat = tmp_raster$lat)
+```
 
 
 
