@@ -147,7 +147,7 @@ dbAppendTable(conn=con_to_routing_db, name = "tmp_raster_points", value=raster)
 DROP TABLE IF EXISTS potential_warehouse_locations;
 
 CREATE TABLE potential_warehouse_locations (
-  proj_vertice_id integer, -- Todo: Eigentlich ja primary key
+  proj_vertice_id integer primary key,
 	proj_lat double precision NOT NULL,
 	proj_long double precision NOT NULL,
 	proj_the_geom geometry NOT NULL,
