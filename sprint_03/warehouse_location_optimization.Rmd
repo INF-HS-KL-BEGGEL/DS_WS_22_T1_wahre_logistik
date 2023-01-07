@@ -54,14 +54,46 @@ Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölk
 
 # Raster
 ```{r}
+orthodrome_meters <- function(lat1, long1, lat2, long2) { # Todo: noch ein bisschen testen
+  
+  lat1_rad <- lat1*pi/180
+  long1_rad <- long1*pi/180
+  lat2_rad <- lat2*pi/180
+  long2_rad <- long2*pi/180
+  
+  zeta <- acos(sin(lat1_rad)*sin(lat2_rad)+cos(lat1_rad)*cos(lat2_rad)*cos(long2_rad-long1_rad))
+  # print(zeta)
+  distance_earth <- zeta*6370000
+  
+  return(distance_earth)
+}
+
+# #Test: Ergebnis sollte ca.8918000m
+# orthodrome(52.517, 13.40, 35.7, 139.767)
+```
+
+
+
+```{r}
 de_min_long <- 5.8630797
 de_max_long <- 15.0644589 
 de_min_lat <- 47.2842067
 de_max_lat <- 55.0458651
+de_long_mid <- (de_max_long + de_min_long)/2
+de_lat_mid <- (de_max_lat + de_min_lat)/2
 
-# Todo: length.out muss noch jeweils sinnvoll gewählt werden (es muss nicht in beiden Richtungen gleich sein)
-long_intervall <- seq(from=de_min_long, to=de_max_long, length.out=6)
-lat_intervall <- seq(from=de_min_lat, to=de_max_lat, length.out=10)
+length_long_in_meters <- orthodrome_meters(lat1 = de_lat_mid, long1 = de_min_long, lat2 = de_lat_mid, long2 = de_max_long)
+length_lat_in_meters <- orthodrome_meters(lat1 = de_min_lat, long1 = de_long_mid, lat2 = de_max_lat, long2 = de_long_mid)
+
+ratio_lat_long <- length_lat_in_meters/length_long_in_meters
+# ratio_lat_long <- (de_max_lat - de_min_lat) / (de_max_long - de_min_long)
+# ratio_lat_long <- 1.244206
+
+length_out_long <- 10 # Todo: muss noch sinnvoll gewählt werden (nicht zu groß, sonst zu viele Routen)
+length_out_lat <- ceiling(length_out_long * ratio_lat_long)
+
+long_intervall <- seq(from = de_min_long, to = de_max_long, length.out = length_out_long)
+lat_intervall <- seq(from = de_min_lat, to = de_max_lat, length.out = length_out_lat)
 
 raster <- expand.grid(long=long_intervall, lat=lat_intervall)
 ```
@@ -73,6 +105,12 @@ leaflet(width="100%") %>%
   addTiles() %>% 
   addCircleMarkers(lng = raster$long, lat = raster$lat)
 ```
+
+
+
+
+
+
 
 
 
