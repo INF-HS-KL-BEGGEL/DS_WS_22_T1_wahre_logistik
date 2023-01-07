@@ -116,7 +116,7 @@ leaflet(width="100%") %>%
 
 
 ```{sql connection=con_to_routing_db}
-# Hilfstabelle "tmp_raster_points" anlegen, in die die Raster-Punkte (aus raster) 1:1 reingeschrieben werden sollen (siehe nächster Code Chunk).
+-- Hilfstabelle "tmp_raster_points" anlegen, in die die Raster-Punkte (aus raster) 1:1 reingeschrieben werden sollen (siehe nächster Code Chunk).
 DROP TABLE IF EXISTS tmp_raster_points;
 
 CREATE TABLE tmp_raster_points (
@@ -143,7 +143,7 @@ dbAppendTable(conn=con_to_routing_db, name = "tmp_raster_points", value=raster)
 
 
 ```{sql connection=con_to_routing_db}
-# Anlegen der Tabelle für die potenziellen Lagerstandorte
+-- Anlegen der Tabelle für die potenziellen Lagerstandorte
 DROP TABLE IF EXISTS potential_warehouse_locations;
 
 CREATE TABLE potential_warehouse_locations (
@@ -159,10 +159,10 @@ CREATE TABLE potential_warehouse_locations (
 
 
 ```{sql connection=con_to_routing_db}
-# Hier passieren die folgenden Schritte:
-# 1. Für jeden unserer Rasterpunkte suchen wir den nächstgelegenden Knoten aus unserer routing_db.
-# 2. Ein paar Aliase einführen.
-# 3. Das Ergebnis schreiben wir in die Tabelle "potential_warehouse_locations"
+-- Hier passieren die folgenden Schritte:
+-- 1. Für jeden unserer Rasterpunkte suchen wir den nächstgelegenden Knoten aus unserer routing_db.
+-- 2. Ein paar Aliase einführen.
+-- 3. Das Ergebnis schreiben wir in die Tabelle "potential_warehouse_locations"
 INSERT INTO potential_warehouse_locations(proj_vertice_id, proj_long, proj_lat, proj_the_geom, original_lat, original_long)
 SELECT DISTINCT ON (id)
         id AS proj_vertice_id, proj_long, proj_lat, the_geom AS proj_the_geom, lat AS original_lat, long AS original_long
