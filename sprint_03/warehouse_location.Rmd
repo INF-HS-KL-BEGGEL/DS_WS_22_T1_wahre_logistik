@@ -31,6 +31,14 @@ con <- DBI::dbConnect(odbc::odbc(),
                       UID      = Sys.getenv("user"),
                       PWD      = Sys.getenv("password"),
                       Port     = Sys.getenv("port"))
+
+con_postgres <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
 ```
 
 # Disclaimer: Urheberrecht
@@ -495,45 +503,42 @@ leaflet(width="100%") %>%
 ```
 
 
+
 ```{r}
-cities <- dbGetQuery(conn=con, statement = "select * from cities_de")
-kunden <- dbGetQuery(conn=con, statement = "select * from kundenstammdaten")
+#Lade Cities und Kunden
+cities <- dbGetQuery(conn=con_postgres, statement = "select * from cities_de")
+kunden <- dbGetQuery(conn=con_postgres, statement = "select * from kundenstammdaten")
 ```
 
 ```{r}
-cities
-kunden
-
+#Kreuze Cities und Kunden
 cxk <- crossing(kunden, cities)
 ```
 
 ```{r}
-cxk
-
+#Erzeuge Spalte distance mit euklidischer Distanz zwischen den beiden long, lat werten aus Cities und Kunden
 cxk <- cxk %>% mutate(distance=sqrt((laengengrad-lng)^2 + (breitengrad-lat)^2))
-
-cxk
-
 ```
 
 ```{r}
+#Wähle nur die kleinste Distanz aus
 cxk <- cxk %>%  group_by(kndnr) %>%  slice_min(distance, with_ties = FALSE) %>% arrange(desc(distance))
-
+#Selectiere nur kdnr und cid für das Update in der DB 
 scxk <- cxk %>% select(kndnr, cid)
-
-scxk
 ```
 
 ```{r}
+#Weise den Kundendatensätze die entsprechende Cid aus cities zu
 for(i in 1:nrow(scxk)) {
-  res <- dbSendQuery(con, paste("UPDATE kundenstammdaten SET city_id=",pull(scxk[i,2])," WHERE kndnr='",pull(scxk[i,1]),"';", sep=""))
+  res <- dbSendQuery(con_postgres, paste("UPDATE kundenstammdaten SET city_id=",pull(scxk[i,2])," WHERE kndnr='",pull(scxk[i,1]),"';", sep=""))
   dbClearResult(res)
   #print(paste(i, "done"))
 }
 ```
 
 ```{r}
-orthodrome_meters <- function(lat1, long1, lat2, long2) {
+#Funktion zum Berechnen der kürzesten Strecke auf der Erde (Elliptische Geometrie)
+orthodrome_earth_meters <- function(lat1, long1, lat2, long2) {
   
   lat1_rad <- lat1*pi/180
   long1_rad <- long1*pi/180
@@ -547,10 +552,14 @@ orthodrome_meters <- function(lat1, long1, lat2, long2) {
   return(distance_earth)
 }
 
-# #Test: Ergebnis sollte ca.8918000m
+# #Test: Berlin-Tokio - Ergebnis sollte ca.8918000m
 # orthodrome(52.517, 13.40, 35.7, 139.767)
 ```
 
+```{r include=FALSE}
+dbDisconnect(con)
+dbDisconnect(con_postgres)
+```
 
 # Weiteres Todos
 ```{r}
