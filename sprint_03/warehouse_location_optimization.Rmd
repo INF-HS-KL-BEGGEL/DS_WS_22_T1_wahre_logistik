@@ -54,22 +54,17 @@ Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölk
 
 # Raster
 ```{r}
-orthodrome_meters <- function(lat1, long1, lat2, long2) { # Todo: noch ein bisschen testen
-  
+orthodrome_meters <- function(lat1, long1, lat2, long2) {
   lat1_rad <- lat1*pi/180
   long1_rad <- long1*pi/180
   lat2_rad <- lat2*pi/180
   long2_rad <- long2*pi/180
   
   zeta <- acos(sin(lat1_rad)*sin(lat2_rad)+cos(lat1_rad)*cos(lat2_rad)*cos(long2_rad-long1_rad))
-  # print(zeta)
   distance_earth <- zeta*6370000
   
   return(distance_earth)
 }
-
-# #Test: Ergebnis sollte ca.8918000m
-# orthodrome(52.517, 13.40, 35.7, 139.767)
 ```
 
 
