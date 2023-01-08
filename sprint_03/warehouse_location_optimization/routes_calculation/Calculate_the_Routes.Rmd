@@ -1,0 +1,59 @@
+---
+title: "Routing Performance"
+author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
+output:
+  html_notebook:
+    toc: true
+    toc_float: true
+    code_folding: none
+    number_sections: true
+---
+
+
+
+```{r include=FALSE}
+library(DBI)
+library(odbc)
+library(readr)
+library(leaflet)
+library(dplyr)
+library(stringr)
+library(glue)
+library(tictoc)
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+```{r include=FALSE}
+# Verbindung zu unserer Datenbank für das Routing (Name = "routing_db")
+con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname_routing"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+
+
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname_routing"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+
+
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+
+
+# Achtung
+Diese Notebook dient der Berechnung der Routen von allen Kunden-Clustern zu allen potenziellen Lagerstandorten. Dies ist mit einer beträchtlichen Laufzeit verbunden. Im Optimalfall wird dieses Notebook nur einmal ausgeführt und danach die entsprechenden Code-Chunks auskommentiert, sodass nicht versehentlich irgendwann alle Routen noch einmal ausgerechnet werden.
+
+
+
+# Todo
+Todo
