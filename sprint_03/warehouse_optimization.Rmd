@@ -15,6 +15,10 @@ library(DBI)
 library(odbc)
 library(leaflet)
 library(dplyr)
+library(glue)
+library(rlang)
+library(ggplot2)
+library(plotly)
 readRenviron("../env_files/.Renviron.postgres")
 ```
 
@@ -32,14 +36,258 @@ con <- DBI::dbConnect(odbc::odbc(),
 Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
 
 ```{r include=FALSE}
-vk <- dbGetQuery(conn=con, statement = "select materialnummer, abgang, vk_preis_num from verkaeufe")
+verkaeufe <- dbGetQuery(conn=con, statement = "select * from verkaeufe")
+```
+
+```{r include=FALSE}
+# Funktion zum Durchführen von ABC-Analysen
+# 1. Sortiere die Datensätze absteigend nach dem gewählten Merkmal (column)
+# 2. Berechne den prozentualen Anteil
+# 3. Kumuliere die prozentualen Anteile
+# 4. Ordne die Datensätze gemäß der gewählten Grenzen (thresholds) den Klassen zu (A, B, ...)
+
+abc_analyse <- function(.data, column, classnames, thresholds){
+  #classes <- LETTERS[1:(length(thresholds)+1)]
+  classes <- classnames
+  
+  class_mappings <- c(glue('anteil_kumuliert <= {thresholds[1]} ~ "{classes[1]}"'))
+  for(i in 2:length(thresholds)){
+    class_mappings <- c(class_mappings, glue('anteil_kumuliert > {thresholds[i-1]} & anteil_kumuliert <= {thresholds[i]} ~ "{classes[i]}"'))
+  }
+  class_mappings <- c(class_mappings, glue('TRUE ~ "{classes[length(classes)]}"'))
+  class_mappings <- parse_exprs(class_mappings)
+  
+  .data %>% 
+    arrange(desc(!!ensym(column))) %>% 
+    mutate(rang = row_number()) %>% 
+    mutate(anteil = !!ensym(column)/sum(!!ensym(column))) %>% 
+    mutate(anteil_kumuliert = cumsum(anteil)) %>%
+    mutate(klasse = case_when(!!!class_mappings)) %>% 
+    mutate(klasse = as.factor(klasse)) %>%
+    return()
+}
+```
+
+# Nach Umsatz
+```{r include=FALSE}
+# Führe eine ABC-Analyse der Artikel nach dem Umsatz durch.
+classnames <- c("AA", "A", "B", "C", "Rest")
+thresholds <- c(0.4, 0.8, 0.96, 0.99)
+
+abc_analyse_material_nach_umsatz <- verkaeufe %>% 
+  group_by(materialnummer) %>% 
+  summarise(umsatz = sum(vk_preis_num)) %>% 
+  abc_analyse(column = umsatz, thresholds = thresholds, classnames=classnames) %>% 
+  rename(anteil_umsatz = anteil, anteil_umsatz_kumuliert = anteil_kumuliert)
+```
+
+```{r}
+#abc_analyse_material_nach_umsatz
+```
+
+```{r}
+material_umsatz_je_klasse <- abc_analyse_material_nach_umsatz %>% 
+  group_by(klasse) %>% 
+  summarise(umsatz_in_klasse = sum(umsatz), num=n()) %>% 
+  mutate(umsatz_in_klasse_formatiert = format(round(umsatz_in_klasse), big.mark=".", decimal.mark=","))
+
+material_umsatz_je_klasse
+```
+
+
+
+#Nach Zugriffen
+```{r include=FALSE}
+#Ein Zugriff bedeutet, dass wegen einem Artikel ins Lager gegangen werden muss. Hierbei ist es unerheblich, wie viele Verpackungseinheiten aus dem Lager geholt werden.
+
+# l: (9, inf)
+# m: [2,9]
+# n: [0,2)
+#Führe eine ABC-Analyse der Artikel nach den Zugriffen durch
+classnames <- c("l","m","n")
+thresholds <- c(0.79913, 0.959775) # Martins geheime Grenzen
+# thresholds <- c(0.8, 0.96)
+# thresholds <- c(0.075, 0.15, 0.3, 0.45, 0.65, 0.75, 0.9, 0.96)
+
+abc_analyse_nach_zugriffen <- verkaeufe %>%
+  group_by(materialnummer) %>%
+  summarise(anzahl_zugriffe = n()) %>%
+  # abc_analyse(anzahl_zugriffe, thresholds = thresholds) %>%
+  abc_analyse(anzahl_zugriffe, thresholds = thresholds, classnames=classnames) %>% # Martins geheime Grenzen
+  rename(anteil_zugriffe = anteil, anteil_zugriffe_kumuliert = anteil_kumuliert)
+```
+
+```{r}
+abc_analyse_nach_zugriffen
+```
+
+```{r}
+material_zugriffe_je_klasse <- abc_analyse_nach_zugriffen %>% 
+  group_by(klasse) %>% 
+  summarise(zugriffe_in_klasse = sum(anzahl_zugriffe), num=n()) %>% 
+  mutate(zugriffe_in_klasse_formatiert = format(round(zugriffe_in_klasse), big.mark=".", decimal.mark=","))
+```
+
+```{r}
+sum_zugriffe <- sum(material_zugriffe_je_klasse$zugriffe_in_klasse)
+material_zugriffe_je_klasse <- material_zugriffe_je_klasse %>% mutate(zugriffe_in_klasse_prozent=zugriffe_in_klasse/sum_zugriffe)
+
+material_zugriffe_je_klasse
+```
+
+```{r}
+abc_analyse_nach_zugriffen
+```
+
+```{r}
+#ls_per_day <- vk %>% group_by(datum) %>% summarize(num_ls=n_distinct(lieferschein))
+#ls_per_day
+analyse_zugriffen_plot <- abc_analyse_nach_zugriffen %>% filter(anzahl_zugriffe > 1)
+analyse_zugriffen_plot
+#ggplot(analyse_zugriffen_plot, aes(x=rang, y=anzahl_zugriffe)) + geom_bar(stat = "identity")
+# fig <- plot_ly(
+#   data = analyse_zugriffen_plot,
+#   x = ~rang,
+#   y = ~anzahl_zugriffe,
+#   name = "X",
+#   type = "bar"
+# )
+# 
+# fig
 ```
 
 
 ```{r}
-vk
+
+verkaeufe
+
 ```
 
+```{r}
+
+num_lieferscheine <- verkaeufe %>% distinct(lieferschein) %>% nrow()
+
+num_lieferscheine
+
+```
+
+```{r}
+
+ls_positionen <- verkaeufe %>% group_by(lieferschein) %>%  summarise(positionen= n())
+
+ls_positionen <- ls_positionen %>%  group_by(positionen) %>%  summarize(count=n(), prozent=count/num_lieferscheine)
+
+ls_positionen
+
+```
+
+```{r}
+
+#ggplot(ls_positionen %>% filter (positionen< 50), aes(x=positionen, y=count)) + geom_bar(stat = "identity")
+fig <- plot_ly(
+  data = ls_positionen %>% filter (positionen< 50),
+  x = ~positionen,
+  y = ~count,
+  name = "X",
+  type = "bar"
+)
+
+fig
+
+```
+
+```{r}
+
+# ls_positionen_classes <- ls_positionen %>% mutate(class = 
+#                                   case_when(
+#                                     positionen==1 ~ '1',
+#                                     positionen>=2 & positionen<=8 ~ '2-8',
+#                                     positionen>=9 & positionen<=30 ~ '9-30',
+#                                     positionen>30 ~ '31+',
+#                                     )
+#                                 )
+
+ls_positionen_classes <- ls_positionen %>% mutate(class = 
+                                  case_when(
+                                    positionen==1 ~ '1',
+                                    positionen==2 ~ '2',
+                                    positionen==3 ~ '3',
+                                    positionen==4 | positionen==5 ~ '4-5',
+                                    #positionen==5 ~ '5',
+                                    # positionen==6 ~ '6',
+                                    # positionen==7 ~ '7',
+                                    # positionen==8 ~ '8',
+                                    # positionen==9 ~ '9',
+                                    positionen>=6 & positionen<=9 ~ '6-9',
+                                    #positionen==11 ~ '11',
+                                    positionen>9 ~ '10+',
+                                    )
+                                )
+
+ls_positionen_classes
+
+```
+
+```{r}
+
+fig <- plot_ly(ls_positionen_classes, labels = ~class, values = ~prozent, type = 'pie', sort = FALSE)
+fig <- fig %>% layout(title = 'Verteilung Lieferscheine nach Positionen',
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+fig
+
+# ls_positionen_by_class <- ls_positionen_classes %>% group_by(class) %>% summarize(count=n()) %>% mutate(prozent= count/num_lieferscheine)
+# 
+# ls_positionen_by_class
+
+#ls_positionen_1 <- ls_positionen %>% filter(positionen == 1)
+
+#ls_positionen_1 %>% nrow()
+
+```
+
+
+```{r}
+# abc_analyse_material_nach_umsatz_join <- abc_analyse_material_nach_umsatz %>% select(materialnummer, klasse)
+# 
+# vk_class <- verkaeufe %>% inner_join(abc_analyse_material_nach_umsatz_join)
+# 
+# vk_class_mat <- vk_class %>% select(materialnummer, lieferschein, klasse) 
+
+
+test <- function(x){
+  print(x)
+  return(x)
+}
+
+
+#verkaeufe %>% group_by(lieferschein) %>% filter(n() > 1)
+
+#TODO Doppelte Strigs rausfiltern (da bei einem Lieferschein materialien mehrfach vorkommen können)
+weird <- verkaeufe %>%  group_by(lieferschein) %>%  arrange(materialnummer) %>% summarise(comb=paste0(materialnummer, collapse = ","))
+
+weird
+
+#verkaeufe %>% group_by(lieferschein) %>% mutate(testcol=test(materialnummer))
+
+
+```
+
+```{r}
+#weird %>% filter(grepl('4330816840948', comb, fixed=TRUE))
+weird %>% filter(comb == '4330816840948')
+```
+
+```{r}
+weird %>% group_by(comb) %>% summarize(count = n()) %>% arrange(desc(count))
+```
+
+```{r}
+
+verkaeufe %>% group_by(lieferschein) %>%  filter(materialnummer == '4330816840948', n() == 1) 
+
+```
 
 ```{r include=FALSE}
 dbDisconnect(con)
