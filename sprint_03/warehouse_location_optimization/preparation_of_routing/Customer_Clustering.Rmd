@@ -52,8 +52,9 @@ Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölk
 
 
 # Kunden-Cluster
+## Ermittlung
 Unsere Kunden sind schon "natürlich" geclustered. Daher genügt es, einfach die unterschiedlichen Kombinationen aus Längen- und Breitengrad zu selektieren.
-```{r include=FALSE}
+```{r}
 # Unsere Kunden sind schon "natürlich" geclustered. Daher genügt es, einfach die unterschiedlichen Kombinationen aus Längen- und Breitengrad zu selektieren.
 
 query <- "
@@ -71,7 +72,7 @@ customer_cluster_coordinates <- dbGetQuery(conn = con_to_normal_db, statement = 
 # customer_cluster_coordinates %>% nrow()
 ```
 
-
+## Visualisierung
 ```{r echo=FALSE}
 leaflet(width = "100%", height = "700px") %>%
   addTiles() %>% 
@@ -79,3 +80,24 @@ leaflet(width = "100%", height = "700px") %>%
                    lat = customer_cluster_coordinates$lat,
                    radius = 6)
 ```
+
+
+## Abspeichern der Cluster in Datenbank
+```{sql connection = con_to_routing_db}
+DROP TABLE IF EXISTS customer_cluster;
+
+CREATE TABLE customer_cluster (
+	lat double precision NOT NULL,
+	long double precision NOT NULL,
+	PRIMARY KEY (lat, long)
+);
+```
+
+```{r}
+# Schreibe die Kunden-Cluster in die DB
+dbAppendTable(conn=con_to_routing_db, name = "customer_cluster", value=customer_cluster_coordinates)
+```
+
+
+
+
