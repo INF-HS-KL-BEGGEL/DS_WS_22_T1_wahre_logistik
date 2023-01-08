@@ -641,7 +641,15 @@ bd_dijkstra_many_to_many <- function(start_coord_longs, start_coord_lats, destin
             )
             
             -- Berechne die Routen von allen Start- zu allen End-Nodes
-            SELECT *, ST_X(the_geom_node) as long, ST_Y(the_geom_node) as lat
+            SELECT seq,
+                  path_seq,
+                  start_vid,
+                  end_vid,
+                  node,
+                  edge,
+                  ST_X(the_geom_node) as long,
+                  ST_Y(the_geom_node) as lat,
+                  ST_LengthSpheroid(the_geom_edge, 'SPHEROID[\"GRS_1980\",6378137,298.257222101]') as length_of_edge
             FROM pgr_bdDijkstra(
             	  'SELECT id, source, target, cost, reverse_cost
             	  FROM de_edges',
@@ -653,7 +661,12 @@ bd_dijkstra_many_to_many <- function(start_coord_longs, start_coord_lats, destin
             
     	      (SELECT id, the_geom as the_geom_node
     	      FROM de_edges_vertices_pgr) as nodes
-    	      ON routes.node = nodes.id;
+    	      ON routes.node = nodes.id
+    	      
+    	      INNER JOIN
+            (SELECT id, the_geom as the_geom_edge
+            FROM de_edges) as edges
+            ON routes.edge = edges.id;
             ")
   
   
