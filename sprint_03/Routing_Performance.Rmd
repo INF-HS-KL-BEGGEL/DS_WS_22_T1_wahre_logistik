@@ -507,6 +507,8 @@ leaflet(width="100%") %>%
 
 # One-To-Many-Routing
 pgRouting bietet auch die Möglichkeit an, in einer Query gleich mehrere Routen zu berechnen. Beim One-To-Many-Routing wird ein Start-Node und ein Array von End-Nodes angeben.
+
+## Example
 ```{r}
 tic()
 query <- "
@@ -561,6 +563,172 @@ leaflet(width = "100%", height = "700px") %>%
   addPolylines(lat = route_2222$lat, lng = route_2222$long, color = "red") %>% 
   addPolylines(lat = route_3333$lat, lng = route_3333$long, color = "purple")
 ```
+
+
+
+## Funktion
+```{r include=FALSE}
+generate_coord_values_string <- function(lats, longs) {
+  tibble(lats, longs) %>% 
+    mutate(coord_string = glue("({lats}, {longs})")) %>% 
+    summarise(coord_values_string = str_flatten(coord_string, collapse = ", ")) %>% 
+    pull(1) %>% 
+    return()
+}
+```
+
+```{r echo=FALSE}
+# lats <- c(1, 7, 111)
+# longs <- c(4, 222, 6)
+# generate_coord_values_string(lats = lats, longs = longs)
+```
+
+
+```{r include=FALSE}
+bd_dijkstra_many_to_many <- function(start_coord_longs, start_coord_lats, destination_coord_longs, destination_coord_lats){
+
+  start_coords_values_string <- generate_coord_values_string(lats = start_coord_lats, longs = start_coord_longs)
+  destination_coords_values_string <- generate_coord_values_string(lats = destination_coord_lats, longs = destination_coord_longs)
+  
+  query <- glue("
+          -- Hole zu allen start_coords den jeweils nächstgelegenen Node
+           WITH start_vids AS (
+            	SELECT DISTINCT ON (id) id
+              FROM
+              	(SELECT lat, long
+              	FROM (
+              			VALUES {start_coords_values_string}
+              		 ) AS start_coords (lat, long)
+              	) AS start_coords
+              	 
+              	 CROSS JOIN LATERAL
+              	 
+              	 (
+              		SELECT id,
+              				the_geom,
+              				ST_X(the_geom) AS proj_long,
+              				ST_Y(the_geom) AS proj_lat,
+              				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(start_coords.long, start_coords.lat), 4326) AS dist
+              		FROM de_edges_vertices_pgr AS vertices
+              		ORDER BY dist
+              		LIMIT 1
+              	)  AS vertices
+            ),
+            
+            
+            -- Hole zu allen end_coords den jeweils nächstgelegenen Node
+            end_vids AS (
+            	SELECT DISTINCT ON (id) id
+              FROM
+              	(SELECT lat, long
+              	FROM (
+              			VALUES {destination_coords_values_string}
+              		 ) AS end_coords (lat, long)
+              	) AS end_coords
+              	 
+              	 CROSS JOIN LATERAL
+              	 
+              	 (
+              		SELECT id,
+              				the_geom,
+              				ST_X(the_geom) AS proj_long,
+              				ST_Y(the_geom) AS proj_lat,
+              				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(end_coords.long, end_coords.lat), 4326) AS dist
+              		FROM de_edges_vertices_pgr AS vertices
+              		ORDER BY dist
+              		LIMIT 1
+              	)  AS vertices
+            )
+            
+            -- Berechne die Routen von allen Start- zu allen End-Nodes
+            SELECT *, ST_X(the_geom_node) as long, ST_Y(the_geom_node) as lat
+            FROM pgr_bdDijkstra(
+            	  'SELECT id, source, target, cost, reverse_cost
+            	  FROM de_edges',
+            	  ARRAY(SELECT id from start_vids), 
+            	  ARRAY(SELECT id from end_vids)
+            ) as routes
+            
+            INNER JOIN
+            
+    	      (SELECT id, the_geom as the_geom_node
+    	      FROM de_edges_vertices_pgr) as nodes
+    	      ON routes.node = nodes.id;
+            ")
+  
+  
+  # return(query)
+  return(dbGetQuery(conn = con_to_routing_db, statement = query))
+}
+```
+
+
+
+### Test der Funktion
+```{r echo=FALSE}
+tic()
+
+# Frankfurt am Main
+start_coord_lats <- 50.103845
+start_coord_longs <- 8.673706
+
+
+# Hamburg, Stuttgart, Dresden, Regensburg, Passau, Köln
+# destination_coord_lats <- c(53.527248, 48.835797, 51.096623, 49.037868)
+# destination_coord_longs <- c(10.019531, 9.206543, 13.688965, 12.062988)
+# destination_coord_lats <- c(53.527248, 48.835797, 51.096623, 49.037868, 48.582058)
+# destination_coord_longs <- c(10.019531, 9.206543, 13.688965, 12.062988, 13.458252)
+destination_coord_lats <- c(53.527248, 48.835797, 51.096623, 49.037868, 48.582058, 50.937662)
+destination_coord_longs <- c(10.019531, 9.206543, 13.688965, 12.062988, 13.458252, 6.943359)
+
+
+# Routen berechnen
+routes <- bd_dijkstra_many_to_many(start_coord_longs = start_coord_longs,
+                                   start_coord_lats = start_coord_lats,
+                                   destination_coord_longs = destination_coord_longs,
+                                   destination_coord_lats = destination_coord_lats)
+
+toc()
+```
+
+
+
+
+
+```{r echo=FALSE}
+end_vids <- 
+  routes %>% 
+    distinct(end_vid) %>% 
+    pull()
+
+colors <- c("red", "green", "blue", "orange", "purple", "cyan")
+
+map <- 
+  leaflet(width = "100%", height = "700px") %>% 
+  addTiles()
+
+for(i in 1:length(end_vids)){
+  route <- 
+    routes %>% 
+    filter(end_vid == end_vids[i]) %>% 
+    select(lat, long)
+  
+  color <- colors[i %% (length(colors)+1)]
+  map <- 
+    map %>% 
+    addPolylines(lat = route$lat, lng = route$long, color = color)
+}
+
+map
+```
+
+
+
+
+
+
+
+
 
 
 # Weiteres Todos
