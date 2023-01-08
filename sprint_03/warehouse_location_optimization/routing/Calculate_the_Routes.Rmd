@@ -45,6 +45,113 @@ con <- DBI::dbConnect(odbc::odbc(),
 
 
 
+```{r include=FALSE}
+generate_coord_values_string <- function(lats, longs) {
+  tibble(lats, longs) %>% 
+    mutate(coord_string = glue("({lats}, {longs})")) %>% 
+    summarise(coord_values_string = str_flatten(coord_string, collapse = ", ")) %>% 
+    pull(1) %>% 
+    return()
+}
+```
+
+
+
+```{r include=FALSE}
+bd_dijkstra_many_to_many <- function(start_coord_longs, start_coord_lats, destination_coord_longs, destination_coord_lats){
+
+  start_coords_values_string <- generate_coord_values_string(lats = start_coord_lats, longs = start_coord_longs)
+  destination_coords_values_string <- generate_coord_values_string(lats = destination_coord_lats, longs = destination_coord_longs)
+  
+  query <- glue("
+          -- Hole zu allen start_coords den jeweils nächstgelegenen Node
+           WITH start_vids AS (
+            	SELECT DISTINCT ON (id) id
+              FROM
+              	(SELECT lat, long
+              	FROM (
+              			VALUES {start_coords_values_string}
+              		 ) AS start_coords (lat, long)
+              	) AS start_coords
+              	 
+              	 CROSS JOIN LATERAL
+              	 
+              	 (
+              		SELECT id,
+              				--the_geom,
+              				--ST_X(the_geom) AS proj_long,
+              				--ST_Y(the_geom) AS proj_lat,
+              				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(start_coords.long, start_coords.lat), 4326) AS dist
+              		FROM de_edges_vertices_pgr AS vertices
+              		ORDER BY dist
+              		LIMIT 1
+              	)  AS vertices
+            ),
+            
+            
+            -- Hole zu allen end_coords den jeweils nächstgelegenen Node
+            end_vids AS (
+            	SELECT DISTINCT ON (id) id
+              FROM
+              	(SELECT lat, long
+              	FROM (
+              			VALUES {destination_coords_values_string}
+              		 ) AS end_coords (lat, long)
+              	) AS end_coords
+              	 
+              	 CROSS JOIN LATERAL
+              	 
+              	 (
+              		SELECT id,
+              				--the_geom,
+              				--ST_X(the_geom) AS proj_long,
+              				--ST_Y(the_geom) AS proj_lat,
+              				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(end_coords.long, end_coords.lat), 4326) AS dist
+              		FROM de_edges_vertices_pgr AS vertices
+              		ORDER BY dist
+              		LIMIT 1
+              	)  AS vertices
+            )
+            
+            -- Berechne die Routen von allen Start- zu allen End-Nodes
+            SELECT seq,
+                  path_seq,
+                  start_vid,
+                  end_vid,
+                  node,
+                  edge,
+                  ST_X(the_geom_node) as long,
+                  ST_Y(the_geom_node) as lat,
+                  ST_LengthSpheroid(the_geom_edge, 'SPHEROID[\"GRS_1980\",6378137,298.257222101]') as length_of_edge
+            FROM pgr_bdDijkstra(
+            	  'SELECT id, source, target, cost, reverse_cost
+            	  FROM de_edges',
+            	  ARRAY(SELECT id from start_vids), 
+            	  ARRAY(SELECT id from end_vids)
+            ) as routes
+            
+            INNER JOIN
+            
+    	      (SELECT id, the_geom as the_geom_node
+    	      FROM de_edges_vertices_pgr) as nodes
+    	      ON routes.node = nodes.id
+    	      
+    	      INNER JOIN
+            (SELECT id, the_geom as the_geom_edge
+            FROM de_edges) as edges
+            ON routes.edge = edges.id;
+            ")
+  
+  
+  # return(query)
+  return(dbGetQuery(conn = con_to_routing_db, statement = query))
+}
+```
+
+
+
+
+
 # Disclaimer: Urheberrecht
 Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
 
@@ -55,5 +162,86 @@ Diese Notebook dient der Berechnung der Routen von allen Kunden-Clustern zu alle
 
 
 
-# Todo
-Todo
+# Routen von Lagern zu Kunden berechnen
+
+```{r include=FALSE}
+# Benötigte Koordinaten aus der Datenbank laden
+customer_clusters <- dbGetQuery(conn = con_to_routing_db, statement = "SELECT * FROM customer_cluster;")
+potential_warehouse_locations <- dbGetQuery(conn = con_to_routing_db, statement = "SELECT * FROM potential_warehouse_locations;")
+```
+
+
+# Playground
+## Test mit einem Lagerstandort
+```{r}
+customer_clusters %>% 
+  head()
+```
+
+```{r}
+potential_warehouse_locations %>% 
+  head()
+```
+
+
+```{r}
+potential_warehouse_locations[1, "proj_lat"]
+```
+
+```{r}
+potential_warehouse_locations[1,]
+```
+
+
+
+
+```{r echo=FALSE}
+tic()
+
+start_coord_lats <- potential_warehouse_locations[1, "proj_lat"]
+start_coord_longs <- potential_warehouse_locations[1, "proj_long"]
+destination_coord_lats <- customer_clusters$lat
+destination_coord_longs <- customer_clusters$long
+
+
+# Routen berechnen
+routes <- bd_dijkstra_many_to_many(start_coord_longs = start_coord_longs,
+                                   start_coord_lats = start_coord_lats,
+                                   destination_coord_longs = destination_coord_longs,
+                                   destination_coord_lats = destination_coord_lats)
+
+toc()
+```
+
+
+
+
+
+```{r echo=FALSE}
+end_vids <- 
+  routes %>% 
+    distinct(end_vid) %>% 
+    pull()
+
+colors <- c("red", "green", "blue", "orange", "purple", "cyan", "yellow", "brown", "black")
+
+map <- 
+  leaflet(width = "100%", height = "700px") %>% 
+  addTiles()
+
+for(i in 1:length(end_vids)){
+  route <- 
+    routes %>% 
+    filter(end_vid == end_vids[i]) %>% 
+    select(lat, long)
+  
+  color <- colors[i %% (length(colors)+1)]
+  map <- 
+    map %>% 
+    addCircleMarkers(lat = start_coord_lats, lng = start_coord_longs) %>% 
+    addPolylines(lat = route$lat, lng = route$long, color = color)
+}
+
+map
+```
+
