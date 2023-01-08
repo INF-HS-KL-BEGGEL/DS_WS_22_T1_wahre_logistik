@@ -172,11 +172,12 @@ potential_warehouse_locations <- dbGetQuery(conn = con_to_routing_db, statement 
 
 
 # Playground
-## Test mit einem Lagerstandort
+## Test mit einem Lagerstandort 1
 ```{r}
 customer_clusters %>% 
   head()
 ```
+
 
 ```{r}
 potential_warehouse_locations %>% 
@@ -187,6 +188,7 @@ potential_warehouse_locations %>%
 ```{r}
 potential_warehouse_locations[1, "proj_lat"]
 ```
+
 
 ```{r}
 potential_warehouse_locations[1,]
@@ -212,8 +214,6 @@ routes <- bd_dijkstra_many_to_many(start_coord_longs = start_coord_longs,
 
 toc()
 ```
-
-
 
 
 
@@ -245,3 +245,121 @@ for(i in 1:length(end_vids)){
 map
 ```
 
+
+```{r}
+routes %>% 
+  nrow()
+```
+
+
+
+## Test mit einem Lagerstandort 2
+```{r echo=FALSE}
+tic()
+
+start_coord_lats <- potential_warehouse_locations[5, "proj_lat"]
+start_coord_longs <- potential_warehouse_locations[5, "proj_long"]
+destination_coord_lats <- customer_clusters$lat
+destination_coord_longs <- customer_clusters$long
+
+
+# Routen berechnen
+routes <- bd_dijkstra_many_to_many(start_coord_longs = start_coord_longs,
+                                   start_coord_lats = start_coord_lats,
+                                   destination_coord_longs = destination_coord_longs,
+                                   destination_coord_lats = destination_coord_lats)
+
+toc()
+```
+
+
+
+```{r echo=FALSE}
+end_vids <- 
+  routes %>% 
+    distinct(end_vid) %>% 
+    pull()
+
+colors <- c("red", "green", "blue", "orange", "purple", "cyan", "yellow", "brown", "black")
+
+map <- 
+  leaflet(width = "100%", height = "700px") %>% 
+  addTiles()
+
+for(i in 1:length(end_vids)){
+  route <- 
+    routes %>% 
+    filter(end_vid == end_vids[i]) %>% 
+    select(lat, long)
+  
+  color <- colors[i %% (length(colors)+1)]
+  map <- 
+    map %>% 
+    addCircleMarkers(lat = start_coord_lats, lng = start_coord_longs) %>% 
+    addPolylines(lat = route$lat, lng = route$long, color = color)
+}
+
+map
+```
+
+
+```{r}
+routes %>% 
+  nrow()
+```
+
+
+## Test mit einem Lagerstandort 3
+```{r echo=FALSE}
+tic()
+
+start_coord_lats <- potential_warehouse_locations[12, "proj_lat"]
+start_coord_longs <- potential_warehouse_locations[12, "proj_long"]
+destination_coord_lats <- customer_clusters$lat
+destination_coord_longs <- customer_clusters$long
+
+
+# Routen berechnen
+routes <- bd_dijkstra_many_to_many(start_coord_longs = start_coord_longs,
+                                   start_coord_lats = start_coord_lats,
+                                   destination_coord_longs = destination_coord_longs,
+                                   destination_coord_lats = destination_coord_lats)
+
+toc()
+```
+
+
+
+```{r echo=FALSE}
+end_vids <- 
+  routes %>% 
+    distinct(end_vid) %>% 
+    pull()
+
+colors <- c("red", "green", "blue", "orange", "purple", "cyan", "yellow", "brown", "black")
+
+map <- 
+  leaflet(width = "100%", height = "700px") %>% 
+  addTiles()
+
+for(i in 1:length(end_vids)){
+  route <- 
+    routes %>% 
+    filter(end_vid == end_vids[i]) %>% 
+    select(lat, long)
+  
+  color <- colors[i %% (length(colors)+1)]
+  map <- 
+    map %>% 
+    addCircleMarkers(lat = start_coord_lats, lng = start_coord_longs) %>% 
+    addPolylines(lat = route$lat, lng = route$long, color = color)
+}
+
+map
+```
+
+
+```{r}
+routes %>% 
+  nrow()
+```
