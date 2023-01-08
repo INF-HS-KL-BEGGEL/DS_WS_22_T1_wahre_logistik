@@ -20,7 +20,7 @@ library(dplyr)
 library(stringr)
 library(glue)
 library(tictoc)
-readRenviron("../env_files/.Renviron.postgres")
+readRenviron("../../env_files/.Renviron.postgres")
 ```
 
 ```{r include=FALSE}
