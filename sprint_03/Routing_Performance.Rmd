@@ -509,7 +509,7 @@ leaflet(width="100%") %>%
 pgRouting bietet auch die Möglichkeit an, in einer Query gleich mehrere Routen zu berechnen. Beim One-To-Many-Routing wird ein Start-Node und ein Array von End-Nodes angeben.
 
 ## Example
-```{r}
+```{r echo=FALSE}
 tic()
 query <- "
           WITH end_vids AS (
@@ -540,7 +540,7 @@ toc()
 ```
 
 
-```{r}
+```{r include=FALSE}
 route_1111 <- 
   tmp_results %>% 
   filter(end_vid == 1111)
@@ -605,9 +605,9 @@ bd_dijkstra_many_to_many <- function(start_coord_longs, start_coord_lats, destin
               	 
               	 (
               		SELECT id,
-              				the_geom,
-              				ST_X(the_geom) AS proj_long,
-              				ST_Y(the_geom) AS proj_lat,
+              				--the_geom,
+              				--ST_X(the_geom) AS proj_long,
+              				--ST_Y(the_geom) AS proj_lat,
               				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(start_coords.long, start_coords.lat), 4326) AS dist
               		FROM de_edges_vertices_pgr AS vertices
               		ORDER BY dist
@@ -630,9 +630,9 @@ bd_dijkstra_many_to_many <- function(start_coord_longs, start_coord_lats, destin
               	 
               	 (
               		SELECT id,
-              				the_geom,
-              				ST_X(the_geom) AS proj_long,
-              				ST_Y(the_geom) AS proj_lat,
+              				--the_geom,
+              				--ST_X(the_geom) AS proj_long,
+              				--ST_Y(the_geom) AS proj_lat,
               				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(end_coords.long, end_coords.lat), 4326) AS dist
               		FROM de_edges_vertices_pgr AS vertices
               		ORDER BY dist
