@@ -164,7 +164,7 @@ Diese Notebook dient der Berechnung der Routen von allen Kunden-Clustern zu alle
 
 # Routen von Lagern zu Kunden berechnen
 ```{r include=FALSE}
-bd_dijkstra_many_to_many_aggregated_results <- function(start_coord_longs, start_coord_lats, destination_coord_longs, destination_coord_lats){
+get_bd_dijkstra_many_to_many_aggregated_results_query_string <- function(start_coord_longs, start_coord_lats, destination_coord_longs, destination_coord_lats){
 
   start_coords_values_string <- generate_coord_values_string(lats = start_coord_lats, longs = start_coord_longs)
   destination_coords_values_string <- generate_coord_values_string(lats = destination_coord_lats, longs = destination_coord_longs)
@@ -220,8 +220,7 @@ bd_dijkstra_many_to_many_aggregated_results <- function(start_coord_longs, start
                   end_vid,
                   proj_end_long,
                   proj_end_lat,
-                  end_vid,
-                  sum(ST_LengthSpheroid(the_geom_edge, 'SPHEROID[\"GRS_1980\",6378137,298.257222101]')) as length_of_route
+                  sum(ST_LengthSpheroid(the_geom_edge, 'SPHEROID[\"GRS_1980\",6378137,298.257222101]')) as length_of_route_in_meters
             FROM pgr_bdDijkstra(
             	  'SELECT id, source, target, cost, reverse_cost
             	  FROM de_edges',
@@ -270,7 +269,7 @@ bd_dijkstra_many_to_many_aggregated_results <- function(start_coord_longs, start
                     proj_start_lat,
                     end_vid,
                     proj_end_long,
-                    proj_end_lat;
+                    proj_end_lat
             ")
   
   
@@ -279,6 +278,42 @@ bd_dijkstra_many_to_many_aggregated_results <- function(start_coord_longs, start
 }
 ```
 
+
+```{r}
+get_evaluate_warehouses_query_string <- function(start_coord_longs, start_coord_lats, destination_coord_longs, destination_coord_lats){
+  from_warehouses_query <- get_bd_dijkstra_many_to_many_aggregated_results_query_string(
+    start_coord_longs = start_coord_longs,
+    start_coord_lats = start_coord_lats,
+    destination_coord_longs = destination_coord_longs,
+    destination_coord_lats = destination_coord_lats
+  )
+  
+  to_warehouses_query <- get_bd_dijkstra_many_to_many_aggregated_results_query_string(
+    start_coord_longs = destination_coord_longs,
+    start_coord_lats = destination_coord_lats,
+    destination_coord_longs = start_coord_longs,
+    destination_coord_lats = start_coord_lats
+  )
+  
+  query_string <- glue("
+                        SELECT *
+                        FROM
+                        (
+                          {from_warehouses_query}
+                        ) AS from_warehouses
+                       
+                       
+                       UNION
+                       
+                       SELECT *
+                       FROM
+                       (
+                        {to_warehouses_query}
+                       ) AS to_warehouses
+                       ;
+                       ")
+}
+```
 
 
 ```{r include=FALSE}
@@ -290,77 +325,58 @@ potential_warehouse_locations <- dbGetQuery(conn = con_to_routing_db, statement 
 
 
 
-
-```{r}
+```{r echo=FALSE}
 tic()
 
 start_coord_lats <- potential_warehouse_locations[1, "proj_lat"]
 start_coord_longs <- potential_warehouse_locations[1, "proj_long"]
-destination_coord_lats <- customer_clusters[1:3,]$lat
-destination_coord_longs <- customer_clusters[1:3,]$long
+# destination_coord_lats <- customer_clusters$lat
+# destination_coord_longs <- customer_clusters$long
+destination_coord_lats <- customer_clusters[1:10,]$lat
+destination_coord_longs <- customer_clusters[1:10,]$long
 
 
 # Routen berechnen
-routes <- bd_dijkstra_many_to_many(start_coord_longs = start_coord_longs,
-                                   start_coord_lats = start_coord_lats,
-                                   destination_coord_longs = destination_coord_longs,
-                                   destination_coord_lats = destination_coord_lats)
+query_string <- 
+  get_evaluate_warehouses_query_string(
+    start_coord_longs = start_coord_longs,
+    start_coord_lats = start_coord_lats,
+    destination_coord_longs = destination_coord_longs,
+    destination_coord_lats = destination_coord_lats
+  )
 
 toc()
 ```
 
+
+
+
 ```{r}
-routes_agg_query <- bd_dijkstra_many_to_many_aggregated_results(start_coord_longs = start_coord_longs,
-                                   start_coord_lats = start_coord_lats,
-                                   destination_coord_longs = destination_coord_longs,
-                                   destination_coord_lats = destination_coord_lats)
-```
-
-
-
-```{r echo=FALSE}
-end_vids <- 
-  routes %>% 
-    distinct(end_vid) %>% 
-    pull()
-
-colors <- c("red", "green", "blue", "orange", "purple", "cyan", "yellow", "brown", "black")
-
-map <- 
-  leaflet(width = "100%", height = "700px") %>% 
-  addTiles()
-
-for(i in 1:length(end_vids)){
-  route <- 
-    routes %>% 
-    filter(end_vid == end_vids[i]) %>% 
-    select(lat, long)
-  
-  color <- colors[i %% (length(colors)+1)]
-  map <- 
-    map %>% 
-    addCircleMarkers(lat = start_coord_lats, lng = start_coord_longs) %>% 
-    addPolylines(lat = route$lat, lng = route$long, color = color)
-}
-
-map
+tmp_string <- 
+  get_bd_dijkstra_many_to_many_aggregated_results_query_string(
+    start_coord_longs = start_coord_longs,
+    start_coord_lats = start_coord_lats,
+    destination_coord_longs = destination_coord_longs,
+    destination_coord_lats = destination_coord_lats
+  )
 ```
 
 
 
 ```{r}
-routes %>% 
-  group_by(start_vid, end_vid) %>% 
-  summarise(length_of_route = sum(length_of_edge))
+results <- dbGetQuery(conn = con_to_routing_db, statement = query_string)
 ```
 
 
+
 ```{r}
-routes %>% 
+results <- as_tibble(results)
+```
+
+```{r}
+results %>% 
   head()
 ```
-
-
 
 
 
