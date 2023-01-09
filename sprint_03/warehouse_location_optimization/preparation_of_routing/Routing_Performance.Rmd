@@ -48,8 +48,7 @@ Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölk
 
 
 
-# Achtung
-Diese Dokument ist ein erster Wurf. Bitte alle Todos beachten (auch im Code)
+
 
 
 # Routing-Funktionen
