@@ -434,6 +434,134 @@ toc()
 
 
 
+## Angepasster Code wegen Timeouts
+Für manche potenzielle Lagerstandorte wird obige Query nicht erfolgreich durchgeführt (vermutlich Timeouts). Deshalb hier nochmal der Code in einer angepassten Variante, bei der zwei kleinere statt der einen großen Query zum Berechnen der Routen abgesetzt werden.
+```{r include=FALSE}
+# Verbindung zu unserer Datenbank für das Routing
+con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname_routing"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+
+
+```{r}
+tic()
+
+stop("Willst du das wirklich ausführen? Die Berechnung dauert ca. 10 h") # Todo: Nach Ausführung wieder entkommentieren
+
+# Längen- und Breitengrade der Kunden-Cluster in zwei Vektoren speichern
+destination_coord_lats <- customer_clusters$lat
+destination_coord_longs <- customer_clusters$long
+
+
+# Iteriere über alle potenziellen Lagerstandorte
+for(i in 1:nrow(potential_warehouse_locations)) {
+# for(i in c(10, 11, 18, 20, 21, 22, 26, 30, 33, 41, 45, 46, 63, 70)) {# Zum Testen # Todo: noch raus
+  
+  print(glue("Anfang for-Schleife, i = {i}"))
+  
+  # Längen- und Breitengrade des aktuellen potenziellen Lagers in zwei Vektoren speichern
+  start_coord_lats <- potential_warehouse_locations[i, "proj_lat"]
+  start_coord_longs <- potential_warehouse_locations[i, "proj_long"]
+  
+  
+  from_warehouses_query <- get_bd_dijkstra_many_to_many_aggregated_results_query_string(
+    start_coord_longs = start_coord_longs,
+    start_coord_lats = start_coord_lats,
+    destination_coord_longs = destination_coord_longs,
+    destination_coord_lats = destination_coord_lats
+  )
+  from_warehouses_query <- glue("{from_warehouses_query};")
+  
+  
+  to_warehouses_query <- get_bd_dijkstra_many_to_many_aggregated_results_query_string(
+    start_coord_longs = destination_coord_longs,
+    start_coord_lats = destination_coord_lats,
+    destination_coord_longs = start_coord_longs,
+    destination_coord_lats = start_coord_lats
+  )
+  to_warehouses_query <- glue("{to_warehouses_query};")
+  
+  
+  from_warehouses_results <- dbGetQuery(conn = con_to_routing_db, statement = from_warehouses_query)
+  to_warehouses_results <- dbGetQuery(conn = con_to_routing_db, statement = to_warehouses_query)
+  results <- rbind(from_warehouses_results, to_warehouses_results)
+  
+
+  # Ermittle die Knoten-Id vom Lagerstandort
+  warehouse_vertex_id <-
+    results %>%
+    group_by(start_vid) %>%
+    summarise(count = n()) %>%
+    arrange(desc(count)) %>%
+    select(start_vid) %>%
+    head(1) %>%
+    pull(1)
+
+  # Ergebnisse von Hin- und Rückwegen zusammenfügen
+  compact_results <-
+    results %>%
+    filter(start_vid == warehouse_vertex_id) %>%
+    inner_join(
+      results %>%
+        select(start_vid,
+               end_vid,
+               length_of_route_in_kilometers
+               )
+      ,
+      by = c("start_vid" = "end_vid", "end_vid" = "start_vid")
+    ) %>%
+    rename(
+      km_start_end = length_of_route_in_kilometers.x,
+      km_end_start = length_of_route_in_kilometers.y
+    )
+
+
+  # Ergebnisse in Datenbank schreiben
+  con_to_normal_db = get_con_to_normal_db()
+  dbAppendTable(conn = con_to_normal_db, name = "routing_agg_results", value = compact_results)
+  dbDisconnect(con_to_normal_db)
+
+  print(glue("Ende for-Schleife, i = {i}"))
+}
+
+toc()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
