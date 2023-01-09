@@ -1,5 +1,5 @@
 ---
-title: "Routing Performance"
+title: "Routen berechnen, Ergebnisse aggregieren und abspeichern"
 author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
 output:
   html_notebook:
@@ -24,6 +24,7 @@ readRenviron("../../../env_files/.Renviron.postgres")
 ```
 
 
+
 ```{r include=FALSE}
 # Verbindung zu unserer Datenbank für das Routing
 con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
@@ -34,6 +35,7 @@ con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
                       PWD      = Sys.getenv("password"),
                       Port     = Sys.getenv("port"))
 ```
+
 
 
 ```{r include=FALSE}
@@ -65,7 +67,6 @@ get_con_to_routing_db <- function(){
   return(con_to_routing_db)
 }
 ```
-
 
 
 
@@ -302,6 +303,7 @@ get_bd_dijkstra_many_to_many_aggregated_results_query_string <- function(start_c
 ```
 
 
+
 ```{r}
 get_evaluate_warehouses_query_string <- function(start_coord_longs, start_coord_lats, destination_coord_longs, destination_coord_lats){
   # Liefert den Query-String, um die Streckenlängen vom Lager zu allen Kunden UND von allen Kunden zum Lager zu berechnen.
@@ -341,59 +343,10 @@ get_evaluate_warehouses_query_string <- function(start_coord_longs, start_coord_
 
 
 
-
 ```{r include=FALSE}
 # Benötigte Koordinaten aus der Datenbank laden
 customer_clusters <- dbGetQuery(conn = con_to_routing_db, statement = "SELECT * FROM customer_cluster;")
 potential_warehouse_locations <- dbGetQuery(conn = con_to_routing_db, statement = "SELECT * FROM potential_warehouse_locations;")
-```
-
-
-
-
-```{r echo=FALSE}
-# tic()
-
-start_coord_lats <- potential_warehouse_locations[1, "proj_lat"]
-start_coord_longs <- potential_warehouse_locations[1, "proj_long"]
-# destination_coord_lats <- customer_clusters$lat
-# destination_coord_longs <- customer_clusters$long
-destination_coord_lats <- customer_clusters[1:10,]$lat
-destination_coord_longs <- customer_clusters[1:10,]$long
-
-
-# Routen berechnen
-query_string <- 
-  get_evaluate_warehouses_query_string(
-    start_coord_longs = start_coord_longs,
-    start_coord_lats = start_coord_lats,
-    destination_coord_longs = destination_coord_longs,
-    destination_coord_lats = destination_coord_lats
-  )
-
-# toc()
-```
-
-
-
-
-
-
-
-
-```{r}
-results <- dbGetQuery(conn = con_to_routing_db, statement = query_string)
-```
-
-
-
-
-
-
-
-```{r}
-potential_warehouse_locations %>% 
-  nrow()
 ```
 
 
@@ -475,172 +428,16 @@ toc()
 
 
 
-```{r}
-query_string
-```
 
 
 
-```{r}
-potential_warehouse_locations[3,]
-```
 
 
 
-```{r}
-for(i in 1:nrow(potential_warehouse_locations)) {
-  print(i)
-}
-```
 
 
-```{r}
-x <- get_con_to_routing_db()
-y <- dbGetQuery(conn = x, statement = "Select * from potential_warehouse_locations")
-dbDisconnect(x)
-```
 
 
-```{r}
-y
-```
-
-
-
-
-
-```{r}
-# tmp <- dbGetQuery(conn = con_to_routing_db, statement = "Select * from potential_warehouse_locations")
-```
-
-
-```{r}
-# con_to_normal_db = get_con_to_normal_db()
-# kunden <- dbGetQuery(conn = con_to_normal_db, statement = "select * from kundenstammdaten")
-# dbDisconnect(con_to_normal_db)
-```
-
-
-
-
-
-
-
-
-
-```{r}
-results %>% 
-  select(start_vid, end_vid, length_of_route_in_kilometers) %>% 
-  filter(end_vid == 3554310 | start_vid == 3554310)
-```
-
-```{r}
-compact_results
-```
-
-
-
-
-
-
-
-
-
-```{r}
-results_2 <- as_tibble(results_2)
-```
-
-```{r}
-results_2 %>% 
-  head()
-```
-
-
-
-```{r}
-tic()
-results_2 %>% 
-  group_by(start_vid) %>% 
-  summarise(count = n()) %>% 
-  arrange(desc(count)) %>% 
-  select(start_vid) %>% 
-  head(1) %>% 
-  pull(1)
-
-toc()
-```
-
-```{r}
-results_2 %>% 
-  nrow()
-```
-
-
-
-```{r}
-results_2 %>% 
-  filter(start_vid == 37852)
-```
-
-
-
-
-
-```{r}
-vec1 <- 
-  (results %>% 
-  arrange(length_of_route_in_kilometers))$length_of_route_in_kilometers
-
-
-vec2 <- 
-  (results_2 %>% 
-  arrange(length_of_route_in_meters))$length_of_route_in_meters
-
-vec1 - vec2/1000
-
-```
-
-
-
-```{r}
-results %>% head()
-```
-
-
-
-```{r}
-results_2 %>% 
-  filter(start_vid == 283805)
-```
-
-
-
-```{r}
-from_results_2 <-
-  results_2 %>% 
-  filter(start_vid == 37852)
-
-to_results_2 <- 
-  results_2 %>% 
-  filter(end_vid == 37852)
-```
-
-
-```{r}
-compact_results_2 <- 
-  results_2 %>% 
-  filter(start_vid == 37852) %>% 
-  inner_join(results_2 %>% select(start_vid, end_vid, length_of_route_in_kilometers),
-             by = c("start_vid" = "end_vid", "end_vid" = "start_vid"))
-```
-
-```{r}
-compact_results_2 %>% 
-  rename(
-    km_start_end = length_of_route_in_kilometers.x,
-    km_end_start = length_of_route_in_kilometers.y
-  )
-```
 
 
 
