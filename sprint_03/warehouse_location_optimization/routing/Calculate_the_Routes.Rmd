@@ -354,7 +354,7 @@ potential_warehouse_locations <- dbGetQuery(conn = con_to_routing_db, statement 
 ```{r}
 tic()
 
-# stop("Willst du das wirklich ausführen? Die Berechnung dauert ca. 10 h") # Todo: Nach Ausführung wieder entkommentieren
+stop("Willst du das wirklich ausführen? Die Berechnung dauert ca. 10 h") # Todo: Nach Ausführung wieder entkommentieren
 
 # Längen- und Breitengrade der Kunden-Cluster in zwei Vektoren speichern
 destination_coord_lats <- customer_clusters$lat
@@ -362,8 +362,11 @@ destination_coord_longs <- customer_clusters$long
 
 
 # Iteriere über alle potenziellen Lagerstandorte
-# for(i in 1:nrow(potential_warehouse_locations)) {
-for(i in 1:2) {# Zum Testen # Todo: noch raus
+for(i in 1:nrow(potential_warehouse_locations)) {
+# for(i in 1:2) {# Zum Testen # Todo: noch raus
+  
+  print(glue("Anfang for-Schleife, i = {i}"))
+  
   # Längen- und Breitengrade des aktuellen potenziellen Lagers in zwei Vektoren speichern
   start_coord_lats <- potential_warehouse_locations[i, "proj_lat"]
   start_coord_longs <- potential_warehouse_locations[i, "proj_long"]
@@ -411,6 +414,8 @@ for(i in 1:2) {# Zum Testen # Todo: noch raus
   con_to_normal_db = get_con_to_normal_db()
   dbAppendTable(conn = con_to_normal_db, name = "routing_agg_results", value = compact_results)
   dbDisconnect(con_to_normal_db)
+  
+  print(glue("Ende for-Schleife, i = {i}"))
 }
 
 toc()
