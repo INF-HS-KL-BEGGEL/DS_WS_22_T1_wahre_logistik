@@ -23,8 +23,9 @@ library(tictoc)
 readRenviron("../../../env_files/.Renviron.postgres")
 ```
 
+
 ```{r include=FALSE}
-# Verbindung zu unserer Datenbank für das Routing (Name = "routing_db")
+# Verbindung zu unserer Datenbank für das Routing
 con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
                       Driver   = Sys.getenv("driver"),
                       Server   = Sys.getenv("host"),
@@ -32,16 +33,39 @@ con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
                       UID      = Sys.getenv("user"),
                       PWD      = Sys.getenv("password"),
                       Port     = Sys.getenv("port"))
-
-
-con <- DBI::dbConnect(odbc::odbc(),
-                      Driver   = Sys.getenv("driver"),
-                      Server   = Sys.getenv("host"),
-                      Database = Sys.getenv("dbname_routing"),
-                      UID      = Sys.getenv("user"),
-                      PWD      = Sys.getenv("password"),
-                      Port     = Sys.getenv("port"))
 ```
+
+
+```{r include=FALSE}
+get_con_to_normal_db <- function(){
+  # Verbindung zu unserer Haupt-Datenbank (Name = "postgres")
+  con_to_normal_db <- DBI::dbConnect(odbc::odbc(),
+                        Driver   = Sys.getenv("driver"),
+                        Server   = Sys.getenv("host"),
+                        Database = Sys.getenv("dbname"),
+                        UID      = Sys.getenv("user"),
+                        PWD      = Sys.getenv("password"),
+                        Port     = Sys.getenv("port"))
+  
+  return(con_to_normal_db)
+}
+
+
+
+get_con_to_routing_db <- function(){
+  # Verbindung zu unserer Datenbank für das Routing
+  con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
+                        Driver   = Sys.getenv("driver"),
+                        Server   = Sys.getenv("host"),
+                        Database = Sys.getenv("dbname_routing"),
+                        UID      = Sys.getenv("user"),
+                        PWD      = Sys.getenv("password"),
+                        Port     = Sys.getenv("port"))
+  
+  return(con_to_routing_db)
+}
+```
+
 
 
 
@@ -158,7 +182,7 @@ Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölk
 
 
 # Achtung
-Diese Notebook dient der Berechnung der Routen von allen Kunden-Clustern zu allen potenziellen Lagerstandorten. Dies ist mit einer beträchtlichen Laufzeit verbunden. Im Optimalfall wird dieses Notebook nur einmal ausgeführt und danach die entsprechenden Code-Chunks auskommentiert, sodass nicht versehentlich irgendwann alle Routen noch einmal ausgerechnet werden.
+Diese Notebook dient der Berechnung der Routen von allen Kunden-Clustern zu allen potenziellen Lagerstandorten. Dies ist mit einer beträchtlichen Laufzeit verbunden. Im Optimalfall wird dieses Notebook nur einmal ausgeführt und danach die entsprechenden Code-Chunks auskommentiert (oder durch stop()-Anweisung blockiert), sodass nicht versehentlich irgendwann alle Routen noch einmal ausgerechnet werden.
 
 
 
@@ -375,18 +399,9 @@ potential_warehouse_locations %>%
 
 
 ```{r}
-# Todo: Hier die eigentliche Logik hinpacken
+tic()
 
-# Ich muss ein Lager durchrechnen
-# Die Ergebnisse aufbereiten
-# Die Ergebnisse in die entsprechende Tabelle schreiben
-# 
-# Zusätzlich zu beachten:
-# Fehlerbehandlung
-# Connection immer wieder aufbauen
-# Connections vielleicht auch immer wieder schließen (zumindest die zur normalen DB)
-
-stop("Willst du das wirklich ausführen? Die Berechnung dauert ca. 10 h")
+# stop("Willst du das wirklich ausführen? Die Berechnung dauert ca. 10 h") # Todo: Nach Ausführung wieder entkommentieren
 
 # Längen- und Breitengrade der Kunden-Cluster in zwei Vektoren speichern
 destination_coord_lats <- customer_clusters$lat
@@ -394,8 +409,8 @@ destination_coord_longs <- customer_clusters$long
 
 
 # Iteriere über alle potenziellen Lagerstandorte
-for(i in (1:nrow(potential_warehouse_locations))) {
-# for(i in (1:1)) {# Zum Testen # Todo: noch raus
+# for(i in 1:nrow(potential_warehouse_locations)) {
+for(i in 1:2) {# Zum Testen # Todo: noch raus
   # Längen- und Breitengrade des aktuellen potenziellen Lagers in zwei Vektoren speichern
   start_coord_lats <- potential_warehouse_locations[i, "proj_lat"]
   start_coord_longs <- potential_warehouse_locations[i, "proj_long"]
@@ -439,8 +454,13 @@ for(i in (1:nrow(potential_warehouse_locations))) {
     )
   
   
-  # Todo: Ergebnisse in Datenbank schreiben
+  # Ergebnisse in Datenbank schreiben
+  con_to_normal_db = get_con_to_normal_db()
+  dbAppendTable(conn = con_to_normal_db, name = "routing_agg_results", value = compact_results)
+  dbDisconnect(con_to_normal_db)
 }
+
+toc()
 ```
 
 
@@ -454,6 +474,51 @@ for(i in (1:nrow(potential_warehouse_locations))) {
 
 
 
+
+```{r}
+query_string
+```
+
+
+
+```{r}
+potential_warehouse_locations[3,]
+```
+
+
+
+```{r}
+for(i in 1:nrow(potential_warehouse_locations)) {
+  print(i)
+}
+```
+
+
+```{r}
+x <- get_con_to_routing_db()
+y <- dbGetQuery(conn = x, statement = "Select * from potential_warehouse_locations")
+dbDisconnect(x)
+```
+
+
+```{r}
+y
+```
+
+
+
+
+
+```{r}
+# tmp <- dbGetQuery(conn = con_to_routing_db, statement = "Select * from potential_warehouse_locations")
+```
+
+
+```{r}
+# con_to_normal_db = get_con_to_normal_db()
+# kunden <- dbGetQuery(conn = con_to_normal_db, statement = "select * from kundenstammdaten")
+# dbDisconnect(con_to_normal_db)
+```
 
 
 
