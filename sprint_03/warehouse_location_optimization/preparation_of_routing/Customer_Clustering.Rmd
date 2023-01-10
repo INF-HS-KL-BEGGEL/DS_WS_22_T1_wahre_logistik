@@ -9,6 +9,9 @@ output:
     number_sections: true
 ---
 
+```{r echo=FALSE}
+stop("In diesem Notebook werden in einigen Code Chunks Datenbanktabellen neu befüllt. Diese Stop-Anweisung soll verhindern, dass die Chunks versehentlich bei einem 'Run All' ausgeführt und somit unbeabsichtigte Änderungen an der Datenbank vorgenommen werden.")
+```
 
 
 ```{r include=FALSE}
@@ -83,10 +86,6 @@ leaflet(width = "100%", height = "700px") %>%
 
 
 ## Abspeichern der Cluster in Datenbank
-```{r echo=FALSE}
-stop("In diesem Kapitel wird die Tabelle für die Kunden-Cluster neu angelegt und befüllt. Wenn du keine Änderungen an den bestehenden Daten machen möchtest, darfst du die verbleibenden Code Chunks in diesem Kapitel nicht ausführen.")
-```
-
 ```{sql connection = con_to_routing_db}
 DROP TABLE IF EXISTS customer_cluster;
 
@@ -103,5 +102,39 @@ dbAppendTable(conn=con_to_routing_db, name = "customer_cluster", value=customer_
 ```
 
 
+## Cluster auf Straße mappen
+```{sql connection = con_to_routing_db}
+DROP TABLE IF EXISTS customer_cluster_proj;
+
+CREATE TABLE customer_cluster_proj (
+  proj_vertex_id integer primary key,
+	proj_lat double precision NOT NULL,
+	proj_long double precision NOT NULL,
+	proj_the_geom geometry NOT NULL,
+	original_lat double precision NOT NULL,
+	original_long double precision NOT NULL
+);
+```
+
+```{sql connection=con_to_routing_db}
+-- Hier passieren die folgenden Schritte:
+-- 1. Für jeden unserer Kunden-Cluster suchen wir den nächstgelegenden Knoten aus unserer routing_db.
+-- 2. Ein paar Aliase einführen.
+-- 3. Das Ergebnis schreiben wir in die Tabelle "customer_cluster_proj"
+INSERT INTO customer_cluster_proj(proj_vertex_id, proj_long, proj_lat, proj_the_geom, original_lat, original_long)
+SELECT DISTINCT ON (id)
+        id AS proj_vertex_id, proj_long, proj_lat, the_geom AS proj_the_geom, lat AS original_lat, long AS original_long
+FROM customer_cluster
+CROSS JOIN LATERAL (
+	SELECT id,
+			the_geom,
+			ST_X(the_geom) AS proj_long,
+			ST_Y(the_geom) AS proj_lat,
+			vertices.the_geom <-> ST_SetSRID(ST_MakePoint(customer_cluster.long, customer_cluster.lat), 4326) AS dist
+	FROM de_edges_vertices_pgr AS vertices
+	ORDER BY dist
+	LIMIT 1
+)  AS vertices;
+```
 
 
