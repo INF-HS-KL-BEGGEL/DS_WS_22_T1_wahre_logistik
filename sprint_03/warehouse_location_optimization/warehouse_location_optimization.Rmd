@@ -23,8 +23,13 @@ library(tictoc)
 readRenviron("../../env_files/.Renviron.postgres")
 ```
 
+```{r include=FALSE}
+width_for_leaflet_maps <- "100%"
+height_for_leaflet_maps <- "80vh"
+```
 
-```{r}
+
+```{r include=FALSE}
 get_con_to_routing_db <- function(){
   con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
                       Driver   = Sys.getenv("driver"),
@@ -50,11 +55,145 @@ get_con_to_normal_db <- function(){
 }
 ```
 
+```{r include=FALSE}
+# Funktion zum Berechnen der Distanz zwischen zwei Punkten (sphärische Geometrie wird berücksichtigt)
+orthodrome_meters <- function(lat1, long1, lat2, long2) {
+  lat1_rad <- lat1*pi/180
+  long1_rad <- long1*pi/180
+  lat2_rad <- lat2*pi/180
+  long2_rad <- long2*pi/180
+  
+  zeta <- acos(sin(lat1_rad)*sin(lat2_rad)+cos(lat1_rad)*cos(lat2_rad)*cos(long2_rad-long1_rad))
+  distance_earth <- zeta*6370000
+  
+  return(distance_earth)
+}
+```
 
 
 
 # Disclaimer: Urheberrecht
 Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+
+
+# Vorbereitungen
+## Raster
+Wir haben ein gleichmäßiges Raster über Deutschland gelegt.
+
+```{r include=FALSE}
+con_to_routing_db <- get_con_to_routing_db()
+query <- "SELECT * FROM tmp_raster_points"
+raster_points <- dbGetQuery(conn = con_to_routing_db, statement = query)
+dbDisconnect(con_to_routing_db)
+```
+
+```{r echo=FALSE}
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>% 
+  addTiles() %>% 
+  addCircleMarkers(lat = raster_points$lat,
+                   lng = raster_points$long,
+                   radius = 6)
+```
+
+Das Raster umfasst `r raster_points %>% nrow()` Punkte, die sowohl in x- als auch y-Richtung jeweils einen Abstand von ca. TODO haben.
+
+
+
+## Standortkandidaten
+Wir haben die Rasterpunkte auf Straßen in Deutschland abgebildet.
+
+```{r include=FALSE}
+con_to_routing_db <- get_con_to_routing_db()
+query <- "SELECT * FROM potential_warehouse_locations"
+potential_warehouse_locations <- dbGetQuery(conn = con_to_routing_db, statement = query)
+dbDisconnect(con_to_routing_db)
+```
+
+```{r echo=FALSE}
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%  
+  addTiles() %>% 
+  addCircleMarkers(lat = potential_warehouse_locations$proj_lat,
+                   lng = potential_warehouse_locations$proj_long,
+                   radius = 6)
+```
+Beim Mapping sind zum Teil auch verschiedene Rasterpunkte auf denselben Straßenknoten abgebildet worden. Deshalb wurde aus den `r raster_points %>% nrow()` Rasterpunkten `r potential_warehouse_locations %>% nrow()` Standortkandidaten in Deutschland.
+
+**Todo: Vielleicht noch beispielhaft an ein paar Rasterpunkten das Mapping mit Pfeilen zeigen.**
+
+## Kundenclustering
+```{r include=FALSE}
+con_to_routing_db <- get_con_to_routing_db()
+query <- "SELECT * FROM customer_cluster"
+customer_cluster <- dbGetQuery(conn = con_to_routing_db, statement = query)
+dbDisconnect(con_to_routing_db)
+```
+
+```{r echo=FALSE}
+# leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%  
+#   addTiles() %>% 
+#   addCircleMarkers(lat = customer_cluster$proj_lat,
+#                    lng = customer_cluster$proj_long,
+#                    radius = 6)
+```
+
+
+
+```{r}
+customer_cluster %>% head()
+```
+
+Todo
+
+## Routenberechnung
+Todo:
+
+1. ein paar Beispielrouten (vielleicht zu zwei Lagerkandidaten) visualisieren
+1. Dann erklären, was wir mit diesen Routen gemacht haben
+1. vllt. nochmal eine Visualisierung: gerade Linien von einem Lagerkandidat zu den Kundenclustern mit der Strecklänge als Kosten an der Linie
+
+
+
+# Auswertung der Routing-Ergebnisse
+Todo:
+
+1. ... Ergebnisse der Analysen hinsichtlich Distanz, Distanz & Umsatz, Distanz & #Bestellung, ...
+
+
+
+
+
+
+
+
+
+# Playground (Todo: noch raus damit)
+```{r}
+lats = seq(from=40, to=45, length.out=20)
+lons = rep(12, 20)
+```
+
+```{r}
+lons
+```
+
+
+```{r echo=FALSE}
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>% 
+  addTiles() %>% 
+  addCircleMarkers(lat = lats,
+                   lng = lons,
+                   radius = 6)
+```
+
+
+```{r echo=FALSE}
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>% 
+  addTiles() %>% 
+  addCircleMarkers(lat = lats,
+                   lng = lons,
+                   radius = 6)
+```
 
 
 
