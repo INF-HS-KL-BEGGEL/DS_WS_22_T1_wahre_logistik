@@ -83,6 +83,10 @@ leaflet(width = "100%", height = "700px") %>%
 
 
 ## Abspeichern der Cluster in Datenbank
+```{r echo=FALSE}
+stop("In diesem Kapitel wird die Tabelle für die Kunden-Cluster neu angelegt und befüllt. Wenn du keine Änderungen an den bestehenden Daten machen möchtest, darfst du die verbleibenden Code Chunks in diesem Kapitel nicht ausführen.")
+```
+
 ```{sql connection = con_to_routing_db}
 DROP TABLE IF EXISTS customer_cluster;
 

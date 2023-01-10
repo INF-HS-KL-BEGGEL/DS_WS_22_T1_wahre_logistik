@@ -9,6 +9,9 @@ output:
     number_sections: true
 ---
 
+```{r echo=FALSE}
+stop("In diesem Notebook werden in einigen Code Chunks Datenbanktabellen neu befüllt. Diese Stop-Anweisung soll verhindern, dass die Chunks versehentlich bei einem 'Run All' ausgeführt und somit unbeabsichtigte Änderungen an der Datenbank vorgenommen werden.")
+```
 
 
 ```{r include=FALSE}
