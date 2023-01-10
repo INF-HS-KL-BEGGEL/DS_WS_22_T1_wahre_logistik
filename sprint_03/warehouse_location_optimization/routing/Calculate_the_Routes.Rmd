@@ -304,7 +304,7 @@ get_bd_dijkstra_many_to_many_aggregated_results_query_string <- function(start_c
 
 
 
-```{r}
+```{r include=FALSE}
 get_evaluate_warehouses_query_string <- function(start_coord_longs, start_coord_lats, destination_coord_longs, destination_coord_lats){
   # Liefert den Query-String, um die Streckenlängen vom Lager zu allen Kunden UND von allen Kunden zum Lager zu berechnen.
   from_warehouses_query <- get_bd_dijkstra_many_to_many_aggregated_results_query_string(
@@ -351,10 +351,10 @@ potential_warehouse_locations <- dbGetQuery(conn = con_to_routing_db, statement 
 
 
 
-```{r}
+```{r include=FALSE}
 tic()
 
-stop("Willst du das wirklich ausführen? Die Berechnung dauert ca. 10 h") # Todo: Nach Ausführung wieder entkommentieren
+stop("Willst du das wirklich ausführen? Die Berechnung dauert ca. 10 h. Abgesehen davon, werden Daten in die Datenbank geschrieben.") # Todo: Nach Ausführung wieder entkommentieren
 
 # Längen- und Breitengrade der Kunden-Cluster in zwei Vektoren speichern
 destination_coord_lats <- customer_clusters$lat
@@ -449,10 +449,10 @@ con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
 
 
 
-```{r}
+```{r include=FALSE}
 tic()
 
-stop("Willst du das wirklich ausführen? Die Berechnung dauert ca. 10 h") # Todo: Nach Ausführung wieder entkommentieren
+stop("Willst du das wirklich ausführen? Die Berechnung dauert ca. 10 h. Abgesehen davon, werden Daten in die Datenbank geschrieben.") # Todo: Nach Ausführung wieder entkommentieren
 
 # Längen- und Breitengrade der Kunden-Cluster in zwei Vektoren speichern
 destination_coord_lats <- customer_clusters$lat
