@@ -147,15 +147,76 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
 Nach der Abbildung auf Knoten unseres Straßennetzwerks liegen `r customer_cluster_proj %>% distinct(proj_vertex_id) %>% nrow()` Koordinaten vor.
 
 
-
-
-
-
-
-
 Todo:
 
 1. Vielleicht noch eine Legende an die Karte (Was bedeuten rote/blaue Kreise?)
+
+
+### Kunden ohne Kundenstammdaten
+Es gibt Kunden in unseren Verkaufsdaten, zu denen wir keine Stammdaten haben. Zu diesen Kunden können wir also keine Route berechnen.
+
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+query <- "
+          SELECT DISTINCT(kunde) AS kndnr
+          FROM verkaeufe
+          
+          EXCEPT
+          
+          SELECT DISTINCT(kndnr_tagless) AS kndnr
+          FROM kundenstammdaten;
+        "
+
+
+kunden_ohne_kundenstammdaten <- dbGetQuery(conn = con_to_normal_db, statement = query)
+dbDisconnect(con_to_normal_db)
+```
+
+
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+query <- "
+          SELECT kunde as kndnr, SUM(vk_preis_num) AS umsatz_durch_kunde
+        	FROM verkaeufe
+        	GROUP BY kunde;
+        "
+
+
+umsatz_je_kunde <- dbGetQuery(conn = con_to_normal_db, statement = query)
+dbDisconnect(con_to_normal_db)
+```
+
+
+
+```{r include=FALSE}
+anteile_der_kunden_ohne_stammdaten_am_umsatz <- 
+  umsatz_je_kunde %>% 
+  mutate(anteil_am_umsatz = umsatz_durch_kunde/sum(umsatz_durch_kunde)) %>% 
+  arrange(desc(anteil_am_umsatz)) %>% 
+  mutate(kumulierter_anteil = cumsum(anteil_am_umsatz)) %>% 
+  inner_join(kunden_ohne_kundenstammdaten, by = "kndnr") %>% 
+  arrange(kumulierter_anteil)
+```
+
+```{r echo=FALSE}
+anteile_der_kunden_ohne_stammdaten_am_umsatz %>% 
+  mutate(
+    anteil_in_prozent = round(anteil_am_umsatz*100, digits = 2),
+    kumulierter_anteil_in_prozent = round(kumulierter_anteil*100, digits = 2)
+    ) %>% 
+  select(kndnr, umsatz_durch_kunde, anteil_in_prozent, kumulierter_anteil_in_prozent)
+```
+Die betreffenden Kunden gehören nicht zu unseren umsatzstarken Kunden. Selbst zusammen machen sie gerade einmal `r sum(anteile_der_kunden_ohne_stammdaten_am_umsatz$anteil_am_umsatz) * 100` am Gesamtumsatz aus.
+
+Todo: Vielleicht diese Kunden auch nochmal hinsichtlich Bestellungen anschauen
+
+
+
+
+
+
+
+
 
 
 
