@@ -122,21 +122,7 @@ Beim Mapping sind zum Teil auch verschiedene Rasterpunkte auf denselben Straßen
 **Todo: Vielleicht noch beispielhaft an ein paar Rasterpunkten das Mapping mit Pfeilen zeigen.**
 
 ## Kundenclustering
-```{r include=FALSE}
-# con_to_routing_db <- get_con_to_routing_db()
-# query <- "SELECT * FROM customer_cluster"
-# customer_cluster <- dbGetQuery(conn = con_to_routing_db, statement = query)
-# dbDisconnect(con_to_routing_db)
-```
-
-```{r echo=FALSE}
-# leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
-#   addTiles() %>%
-#   addCircleMarkers(lat = customer_cluster$lat,
-#                    lng = customer_cluster$long,
-#                    radius = 6)
-```
-
+Um die Anzahl der zu berechnenden Routen zu reduzieren, sollen die Kunden, die nahe beieinander, zu einem Cluster zusammengefasst werden. Glücklicherweise liegen die Kunden schon "von Haus aus" in  `r customer_cluster_proj %>% distinct(original_lat, original_long) %>% nrow()` Clustern vor. Die Cluster-Koordinaten müssen ebenfalls auf die Straße abgebildet werden.
 
 
 ```{r include=FALSE}
@@ -158,12 +144,18 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
                    radius = 6,
                    color = "red")
 ```
+Nach der Abbildung auf Knoten unseres Straßennetzwerks liegen `r customer_cluster_proj %>% distinct(proj_vertex_id) %>% nrow()` Koordinaten vor.
+
+
+
+
+
+
 
 
 Todo:
 
 1. Vielleicht noch eine Legende an die Karte (Was bedeuten rote/blaue Kreise?)
-1. Wie viele Kundencluster haben wir nach dem Mapping noch?
 
 
 
