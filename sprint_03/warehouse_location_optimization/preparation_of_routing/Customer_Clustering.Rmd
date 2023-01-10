@@ -107,12 +107,13 @@ dbAppendTable(conn=con_to_routing_db, name = "customer_cluster", value=customer_
 DROP TABLE IF EXISTS customer_cluster_proj;
 
 CREATE TABLE customer_cluster_proj (
-  proj_vertex_id integer primary key,
+  proj_vertex_id integer,
 	proj_lat double precision NOT NULL,
 	proj_long double precision NOT NULL,
 	proj_the_geom geometry NOT NULL,
 	original_lat double precision NOT NULL,
-	original_long double precision NOT NULL
+	original_long double precision NOT NULL,
+	primary key (original_lat, original_long)
 );
 ```
 
@@ -122,7 +123,7 @@ CREATE TABLE customer_cluster_proj (
 -- 2. Ein paar Aliase einführen.
 -- 3. Das Ergebnis schreiben wir in die Tabelle "customer_cluster_proj"
 INSERT INTO customer_cluster_proj(proj_vertex_id, proj_long, proj_lat, proj_the_geom, original_lat, original_long)
-SELECT DISTINCT ON (id)
+SELECT --DISTINCT ON (id)
         id AS proj_vertex_id, proj_long, proj_lat, the_geom AS proj_the_geom, lat AS original_lat, long AS original_long
 FROM customer_cluster
 CROSS JOIN LATERAL (
