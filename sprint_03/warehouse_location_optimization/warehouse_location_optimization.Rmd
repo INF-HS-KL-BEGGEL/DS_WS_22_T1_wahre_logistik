@@ -123,27 +123,55 @@ Beim Mapping sind zum Teil auch verschiedene Rasterpunkte auf denselben Straßen
 
 ## Kundenclustering
 ```{r include=FALSE}
-con_to_routing_db <- get_con_to_routing_db()
-query <- "SELECT * FROM customer_cluster"
-customer_cluster <- dbGetQuery(conn = con_to_routing_db, statement = query)
-dbDisconnect(con_to_routing_db)
+# con_to_routing_db <- get_con_to_routing_db()
+# query <- "SELECT * FROM customer_cluster"
+# customer_cluster <- dbGetQuery(conn = con_to_routing_db, statement = query)
+# dbDisconnect(con_to_routing_db)
 ```
 
 ```{r echo=FALSE}
-# leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%  
-#   addTiles() %>% 
-#   addCircleMarkers(lat = customer_cluster$proj_lat,
-#                    lng = customer_cluster$proj_long,
+# leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+#   addTiles() %>%
+#   addCircleMarkers(lat = customer_cluster$lat,
+#                    lng = customer_cluster$long,
 #                    radius = 6)
 ```
 
 
 
-```{r}
-customer_cluster %>% head()
+```{r include=FALSE}
+con_to_routing_db <- get_con_to_routing_db()
+query <- "SELECT * FROM customer_cluster_proj"
+customer_cluster_proj <- dbGetQuery(conn = con_to_routing_db, statement = query)
+dbDisconnect(con_to_routing_db)
 ```
 
-Todo
+```{r echo=FALSE}
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = customer_cluster_proj$original_lat,
+                   lng = customer_cluster_proj$original_long,
+                   radius = 6,
+                   color = "blue") %>% 
+  addCircleMarkers(lat = customer_cluster_proj$proj_lat,
+                   lng = customer_cluster_proj$proj_long,
+                   radius = 6,
+                   color = "red")
+```
+
+
+Todo:
+
+1. Vielleicht noch eine Legende an die Karte (Was bedeuten rote/blaue Kreise?)
+1. Wie viele Kundencluster haben wir nach dem Mapping noch?
+
+
+
+
+
+
+
+
 
 ## Routenberechnung
 Todo:
@@ -162,7 +190,11 @@ Todo:
 
 
 
+# Plausi-Checks und Co
+Todo:
 
+1. Es gibt Kunden, zu denen wir keine Route gefunden haben. Wie wichtig sind diese hinsichtlich Umsatz, Anzahl Bestellungen etc.?
+1. Es gibt Kunden, die kommen in unserer Kundenstammdaten-Tabelle nicht vor. Zu diesen können wir logischerweise auch keine Routen berechnen, da uns die Standort-Koordinaten fehlen. Wie wichtig sind diese hinsichtlich Umsatz, Anzahl Bestellungen etc.?
 
 
 
