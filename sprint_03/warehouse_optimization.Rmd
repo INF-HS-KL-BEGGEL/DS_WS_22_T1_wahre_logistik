@@ -19,6 +19,7 @@ library(glue)
 library(rlang)
 library(ggplot2)
 library(plotly)
+library(tidyverse)
 readRenviron("../env_files/.Renviron.postgres")
 ```
 
@@ -265,9 +266,13 @@ test <- function(x){
 #verkaeufe %>% group_by(lieferschein) %>% filter(n() > 1)
 
 #TODO Doppelte Strigs rausfiltern (da bei einem Lieferschein materialien mehrfach vorkommen können)
-weird <- verkaeufe %>%  group_by(lieferschein) %>%  arrange(materialnummer) %>% summarise(comb=paste0(materialnummer, collapse = ","))
+weird <- verkaeufe %>%  group_by(lieferschein) %>%  arrange(materialnummer) %>% summarize(length_comb = n_distinct(materialnummer), comb=paste0(unique(materialnummer), collapse = ","))  %>% arrange(desc(length_comb))
 
 weird
+
+#weird %>% filter(lieferschein == '107163630')
+
+weird %>% group_by(length_comb) %>% summarize(count=n())
 
 #verkaeufe %>% group_by(lieferschein) %>% mutate(testcol=test(materialnummer))
 
@@ -287,6 +292,62 @@ weird %>% group_by(comb) %>% summarize(count = n()) %>% arrange(desc(count))
 
 verkaeufe %>% group_by(lieferschein) %>%  filter(materialnummer == '4330816840948', n() == 1) 
 
+```
+
+
+```{r}
+#x <- verkaeufe %>% group_by(materialnummer, datum, lieferschein) %>% summarize(count=n()) %>% arrange(lieferschein)
+#verkaeufe
+
+#Zugriffe
+zugriffe <- verkaeufe %>% distinct(materialnummer, lieferschein) %>% group_by(materialnummer) %>% summarize(zg=n()) %>% arrange(desc(zg))
+
+count_zugriffe <- zugriffe %>% nrow()
+sum_zugriffe <- sum(zugriffe$zg)
+
+print("count_zg")
+count_zugriffe
+print("sum_zg")
+sum_zugriffe
+
+mean_zugriffe <- sum_zugriffe / count_zugriffe 
+print("mean_zg")
+mean_zugriffe
+
+zugriffe <- zugriffe %>% mutate(zg_minus_mean_squared=((zg-mean_zugriffe)**2))
+
+std_abw <- sqrt(sum(zugriffe$zg_minus_mean_squared) / count_zugriffe)
+print("std_abw")
+std_abw
+
+min <- min(zugriffe$zg)
+print("min_zg")
+min
+
+max <- max(zugriffe$zg)
+print("max_zg")
+max
+
+zugriffe
+
+grp_zg <- zugriffe %>% group_by(zg) %>% summarize(count=n())
+
+
+
+
+plot <- grp_zg %>% filter(zg < 50)  #%>% filter(zg > 50)
+
+plot
+
+fig <- plot_ly(
+  data = plot,
+  x = ~zg,
+  y = ~count,
+  name = "X",
+  type = "bar"
+)
+
+fig
 ```
 
 ```{r include=FALSE}
