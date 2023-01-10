@@ -1,0 +1,249 @@
+---
+title: "Clustering"
+output: html_notebook
+---
+
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+
+
+```{r include=FALSE}
+library(DBI)
+library(dplyr) #Warning! Included this library together with plyr results in the situation that summarize() is double defined. Need to be called by dplyr::summarize
+library(odbc)
+library(factoextra)
+library(RColorBrewer)
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+```{r include=FALSE}
+con <- dbConnect(drv=RPostgres::Postgres(),
+                 dbname=Sys.getenv("dbname"),
+                 host=Sys.getenv("host"),
+                 port=Sys.getenv("port"),
+                 password=Sys.getenv("password"),
+                 user=Sys.getenv("user"))
+```
+
+```{r include=FALSE}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),#"PostgreSQL Unicode",
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+## Filtern
+Vor dem Clustern werden die Daten auf Irregularitäten gefiltert. Darunter fallen Daten, welche eine Ausnahme darstellen und daher eine beondere Bedeutung zukommt. Das Clustering versucht jedoch die 'normalen' Datenzu zu klsasifizieren, weshalb diese Ausnahmen das Ergebnis beeinflussen würden. Aus diesem Grund müssen diese gefiltert werden.
+
+Im Folgenden werden tendenzielle Gegenbuchungen betrachtet, welche das Unternehmen selbst durchgeführt hat und die daher nicht von einem echten Kunden durchgeführt wurden. Dazu werden die Erlöße mit den höchsten Verkaufswerten betrachtet, die alle an nur einem Tag ausgeliefert wurden. Dies ist soweit interresant das solch große Bestellungen wohl kaum an nur einem Tag ausgeführt werden können, wenn diese von einem normalne Kunden angefordert wurden. Folglich wären es Gegenbuchungen.
+
+Da die tatsächliche Verkaufsmenge jedoch bei allen Kunden unabhängig des Verkaufswert meist so gering ist, dass sie an einem einzigen Tag geliefert werden kann, reicht dies nicht aus, um die Gegenbuchungen zu erkennen. Daher wird zusätzlich die Vielfalt an bestellten Materialien betrachtet.
+
+Zu erkennen ist:
+Die Kunden 1748 und 71653 betsellen in einer solchen Vielfalt, dass es utopisch erscheint über 2000 unterschiedliche Produkte an nur einen Tag an ein und den selben Kunden liefern zu können. Daher werden diese als Gegenbuchungen betrachtet und gefiltert vor dem Clustering.
+
+Der Kunde 71654 hat auch einen sehr hohen Verkaufswert, bestellt jedoch nur ein einziges Produkt. Bei genauerer Analyse diese einzelnen Kunden zeigt sich auch, dass dessen Bestellungen zu Teilen auch über mehrere Tage hinweg geliefert werden. Dieser scheint schlussfolgend ein echter Kunde zu sein.
+
+```{r}
+#filter customers
+#highestRetailValues in just one day
+highestRetailValues <- dbGetQuery(conn=con, statement = "Select kunde, lieferschein, count(distinct datum) as days, count(distinct materialnummer) as materialien, count(vk_preis_num) as references, sum(vk_preis_num) as verkaufswert From verkaeufe Where DATE_PART('week',datum) !=1 And DATE_PART('week',datum) !=53 Group By kunde,lieferschein Order By verkaufswert desc")
+highestRetailValues <- highestRetailValues[highestRetailValues$days==1,]
+highestRetailValues
+```
+
+
+```{r}
+#Bar diagramm for total and rel. retail value per cluster
+view <-highestRetailValues %>% select(kunde,materialien,verkaufswert,lieferschein)
+view$kunde <- as.character(view$kunde)
+view$materialien <- as.integer(view$materialien)
+view$lieferschein <- as.character(view$lieferschein)
+view <- view %>% head(10)
+view
+ggplot(view, aes(x=lieferschein, y=materialien)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=paste("Knr: ",kunde)), vjust=-0.1, size=2.8)+
+  geom_text(aes(label=paste(verkaufswert,"€")), vjust=-1.1, size=2.8)+
+  theme_minimal()
+```
+
+
+
+## Kundengruppen nach Bestellhäufigkeit und Verkaufswert
+
+```{r include=FALSE}
+#customers with retail value and amount of orders
+käufeProKunde <- dbGetQuery(conn=con, statement = "Select kunde, lieferschein, sum(vk_preis_num) as verkaufswert From verkaeufe Where DATE_PART('week',datum) !=1 AND DATE_PART('week',datum) !=53 AND kunde != 1748 AND kunde != 71653 Group By kunde,lieferschein")
+käufeProKunde <- käufeProKunde %>% ungroup()
+käufeProKunde <- käufeProKunde %>% group_by(kunde) %>% dplyr::summarize(bestellungen=n(), verkaufswert=sum(verkaufswert)) %>% arrange(desc(verkaufswert))
+
+#create manually a group of customers with just one purchase or an extremely low yearly outcome, as they  most likely wont come again
+oneTimeCustomers <- käufeProKunde[käufeProKunde$bestellungen==1,]
+oneTimeCustomers
+#remove them from the original dataset
+käufeProKunde <- käufeProKunde[käufeProKunde$bestellungen>1,]
+
+
+#scaled table
+käufeProKunde <- käufeProKunde %>% mutate(kunde_sc=scale(kunde), bestellungen_sc=scale(bestellungen), verkaufswert_sc=scale(verkaufswert))
+käufeProKunde_scaled <- käufeProKunde %>% select(kunde_sc, bestellungen_sc, verkaufswert_sc)
+
+
+käufeProKunde_scaled
+käufeProKunde
+```
+
+Beim Clustering mit K-means stellt sich zunächst die Frage, wie viele Cluster gebildet werden sollen. Die Menge der Cluster wird nicht vom Clustering Algorithmus slebst berechnet und stellt stattdessen einen Parameter für diesen dar. Um besser entscheiden zu können, wie viele Cluster sinnvoll wären, wird eine Methode zur Cluster Validierung genutzt - Ellbow Method.
+Die resultierende Kurve sinkt asymptopisch ab. Hirbei wird der Punkt als optimale Cluster Anzahl betrachtet, bei dem die Kurve beginnt sich abzuflachen.
+Daraus schließen wir die eine Clustermenge von 5.
+
+```{r echo=FALSE, warning=FALSE}
+# Fancy K-Means
+fviz_nbclust(käufeProKunde_scaled %>% select(bestellungen_sc,verkaufswert_sc), kmeans, nstart=100, method = "wss")
+```
+
+Das Ergebnis des Clustering sieht aus wie folgt:
+
+```{r echo=FALSE}
+# Fancy K-Means
+kmeans_fancy <- kmeans(käufeProKunde_scaled %>% select(bestellungen_sc,verkaufswert_sc), 5, nstart = 100)
+kmeans_fancy
+# plot the clusters
+fviz_cluster(kmeans_fancy, data = käufeProKunde_scaled %>% select(bestellungen_skaliert=bestellungen_sc,verkaufswert_skaliert=verkaufswert_sc), geom = c("point"),ellipse.type = "convex")
+```
+
+
+```{r include=FALSE}
+#add the results to the primary table
+cluster_data <- cbind(käufeProKunde, cluster = kmeans_fancy$cluster)
+cluster_data
+```
+
+
+```{r include=FALSE}
+#get the summarised values for each cluster
+sumOfClusters <- cluster_data %>% select(cluster,verkaufswert,bestellungen)
+meanVerkaufswert <- mean(sumOfClusters$verkaufswert)
+meanBestellungen <- mean(sumOfClusters$bestellungen)
+amountVerkaufswert <- length(sumOfClusters$verkaufswert)
+amountBestellungen <- length(sumOfClusters$bestellungen)
+sumVerkaufswert <- sum(sumOfClusters$verkaufswert)
+sumBestellungen <- sum(sumOfClusters$bestellungen)
+  
+sumOfClusters <- sumOfClusters %>% group_by(cluster) %>% dplyr::summarize(
+  verkaufswertDesClusters=sum(verkaufswert),
+  verkaufswert_rel=verkaufswertDesClusters/(sumVerkaufswert/100),
+  verkaufswert_avg_imCluster=mean(verkaufswert),
+  bestellungenDesClusters=sum(bestellungen),
+  bestellungen_rel=bestellungenDesClusters/(sumBestellungen/100),
+  bestellungen_avg_imCluster=mean(bestellungen),
+  kunden=n())
+sumOfClusters
+```
+
+Wir ordnen die Cluster nach ihrer Größe und es wird auffällig, dass einer die Cluster mit weitem Abstand die Dominanteste ist und damit die meisten Kunden zu ihm gehören.
+
+```{r echo=FALSE}
+#Bar diagramm for total and rel. retail value per cluster
+ggplot(sumOfClusters %>% select(cluster,kunden), aes(x=cluster, y=kunden)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=kunden), vjust=-0.3, size=3.5)+
+  theme_minimal()
+```
+
+Betrachten wir aber dazu noch den tatsächlichen Umsatz der jeweiligen Gruppen fällt auf, dass die beiden kleinsten Gruppen mit nur 14 bzw. 0.26 % der järhlichen Kunden zusammen für 25% des Umsatzes verantwortlich sind.
+
+```{r echo=FALSE}
+#Bar diagramm for total and rel. retail value per cluster
+ggplot(sumOfClusters %>% select(cluster,verkaufswertDesClusters,verkaufswert_rel), aes(x=cluster, y=verkaufswertDesClusters)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=paste(as.character(round(verkaufswert_rel, digits = 2)),"%")), vjust=+3, size=3.5)+
+  geom_text(aes(label=verkaufswertDesClusters), vjust=+1.3, size=3.5)+
+  theme_minimal()
+```
+
+## Untergruppierung
+Die Beobachtung ist zwar interresant, aber ein Problem bleibt. Der größte Cluster besitzt über 5000 Kunden. Eine Entscheidung für all diese zu treffen kann schwierig sein, weshalb es sich lohnen würde, diese Gruppe weiter zu unterteilen.
+
+```{r}
+#take the data table as before, but only read the data of the biggest cluster
+subCluster <- cluster_data %>% select(kunde, cluster) %>% group_by (cluster) %>% dplyr::summarize(kunden=n())
+subCluster
+targetClusterNumber <- subset(subCluster$cluster, subCluster$kunden == max(subCluster$kunden))
+targetClusterNumber
+subCluster <- cluster_data[cluster_data$cluster==targetClusterNumber,] %>% select(-cluster)
+
+```
+
+
+```{r}
+#berechen den verkaufswert pro Bestellung
+käufeProKunde <- käufeProKunde %>% mutate(verkaufswertProBestellung=verkaufswert/bestellungen)
+käufeProKunde
+subCluster <- inner_join(x=subCluster, y= käufeProKunde %>% select(kunde,verkaufswertProBestellung),by="kunde")
+subCluster <- subCluster %>% mutate (verkaufswertProBestellung_sc=scale(subCluster$verkaufswertProBestellung))
+subCluster
+```
+
+```{r echo=FALSE, warning=FALSE}
+# Fancy K-Means
+fviz_nbclust(subCluster %>% select(bestellungen_sc,verkaufswertProBestellung_sc), kmeans, nstart=100, method = "wss")
+```
+
+```{r echo=FALSE}
+# Fancy K-Means
+kmeans_fancy <- kmeans(subCluster %>% select(bestellungen,verkaufswertProBestellung), 4, nstart = 100)
+kmeans_fancy
+# plot the clusters
+fviz_cluster(kmeans_fancy, data = subCluster %>% select(bestellungen,verkaufswertProBestellung), geom = c("point"),ellipse.type = "convex")
+```
+
+```{r}
+#add the results to the primary table
+cluster_data <- cbind(subCluster, cluster = kmeans_fancy$cluster)
+cluster_data
+```
+
+```{r}
+#get the summarised values for each cluster
+sumOfClusters <- cluster_data %>% select(cluster,verkaufswertProBestellung,bestellungen,verkaufswert)
+sumOfClusters <- sumOfClusters %>% group_by(cluster) %>% dplyr::summarize(kundenAnzahl=n(),durchschnittlicheBestellungenImJahr=sum(bestellungen)/n(),minBestellungenProKunde=min(bestellungen),maxBestellungenProKunde=max(bestellungen),                              minVerkaufswertProKundeImJahr=min(verkaufswert),maxVerkaufswertProKundeImJahr=max(verkaufswert), 
+gesamterVerkaufswert=sum(verkaufswert),                                                                        minDurchschnittsVerkaufswertProKundeUndBestellung=min(verkaufswertProBestellung), maxDurchschnittsVerkaufswertProKundeUndBestellung=max(verkaufswertProBestellung))
+sumOfClusters
+```
+
+```{r echo=FALSE}
+#Bar diagramm for total and rel. retail value per cluster
+ggplot(sumOfClusters %>% select(cluster,kundenAnzahl) %>% arrange(kundenAnzahl), aes(x=cluster, y=kundenAnzahl)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=kundenAnzahl), vjust=-0.3, size=3.5)+
+  theme_minimal()
+```
+
+```{r echo=FALSE}
+#Bar diagramm for total and rel. retail value per cluster
+ggplot(sumOfClusters %>% select(cluster,gesamterVerkaufswert), aes(x=cluster, y=gesamterVerkaufswert)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  #(aes(label=paste(as.character(round(verkaufswert_rel, digits = 2)),"%")), vjust=+3, size=3.5)+
+  geom_text(aes(label=paste(gesamterVerkaufswert,'€')), vjust=+1.3, size=3.5)+
+  theme_minimal()
+```
+
+```{r echo=FALSE}
+#Bar diagramm for total and rel. retail value per cluster
+oneTimeCustomers <- oneTimeCustomers %>% arrange(verkaufswert)
+oneTimeCustomers
+ggplot(data=oneTimeCustomers %>% select(verkaufswert) %>% mutate(knr=row_number()), aes(x=knr, y=verkaufswert)) +
+  geom_line(mapping=aes(x=knr,y=verkaufswert,color=verkaufswert>5),size=1)+
+  ggtitle("Verkaufswert von Bestellungen der Kunden, die nur einmal im Jahr eingekauft haben")
+```
+
+
+```{r include=FALSE}
+dbDisconnect(con)
+```
