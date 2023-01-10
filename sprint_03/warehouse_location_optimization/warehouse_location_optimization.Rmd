@@ -23,25 +23,34 @@ library(tictoc)
 readRenviron("../../env_files/.Renviron.postgres")
 ```
 
-```{r include=FALSE}
-# Verbindung zu unserer Datenbank für das Routing (Name = "routing_db")
-con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
+
+```{r}
+get_con_to_routing_db <- function(){
+  con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
                       Driver   = Sys.getenv("driver"),
                       Server   = Sys.getenv("host"),
                       Database = Sys.getenv("dbname_routing"),
                       UID      = Sys.getenv("user"),
                       PWD      = Sys.getenv("password"),
                       Port     = Sys.getenv("port"))
+  
+  return(con_to_routing_db)
+}
 
-# Verbindung zu unserer Haupt-Datenbank (Name = "postgres")
-con_to_normal_db <- DBI::dbConnect(odbc::odbc(),
+get_con_to_normal_db <- function(){
+  con_to_normal_db <- DBI::dbConnect(odbc::odbc(),
                       Driver   = Sys.getenv("driver"),
                       Server   = Sys.getenv("host"),
                       Database = Sys.getenv("dbname"),
                       UID      = Sys.getenv("user"),
                       PWD      = Sys.getenv("password"),
                       Port     = Sys.getenv("port"))
+  
+  return(con_to_normal_db)
+}
 ```
+
+
 
 
 # Disclaimer: Urheberrecht
@@ -50,76 +59,3 @@ Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölk
 
 
 
-# Routing-Funktion
-```{r}
-calculate_routing_results <- function(start_long, start_lat, end_long, end_lat){
-  # Diese Funktion erledigt die folgenden Schritte (innerhalb einer einzigen Query):
-  # 1. Es werden die nächstgelegenden Nodes zu start = (start_long, start_lat) und end = (end_long, end_lat) bestimmt. Diese nennen wir im Folgenden proj_start und proj_end.
-  # 2. Es werden die Routen proj_start --> proj_end und proj_end --> proj_start berechnet.
-  # 3. Es werden die Längen (in Kilometer) dieser beiden Routen berechnet.
-  
-  # Return: list(
-                  # proj_start_long,
-                  # proj_start_lat,
-                  # proj_end_long,
-                  # proj_end_lat,
-                  # km_start_end,
-                  # km_end_start
-                # )
-  
-  
-  # Todo: Implementierung
-  stop("The function calculate_routing_results is not yet implemented!")
-}
-```
-
-
-
-
-# Routing (Todo: bessere Überschrift)
-## Bidirektionaler A-Star mit limitierender Bounding Box
-```{r echo=FALSE}
-bd_a_star_limit_bbox <- function(start_coord, destination_coord) {
-  # A-Star mit limitierender Bounding Box
-  # Todo: Noch über die anderen Options Gedanken machen (z. B. Heuristik)
-  query <-  glue("
-            -- Find nearest node to start coordinate
-            WITH start as (
-          	  SELECT id
-            	from de_edges_vertices_pgr
-            	order by the_geom <-> ST_SetSRID(ST_MakePoint({start_coord$lon}, {start_coord$lat}), 4326)
-            	limit 1
-            ),
-            
-            -- Find nearest node to end coordinate
-            destination as (
-            	SELECT id
-            	from de_edges_vertices_pgr
-            	order by the_geom <-> ST_SetSRID(ST_MakePoint({destination_coord$lon}, {destination_coord$lat}), 4326)
-            	limit 1
-            )
-            
-            -- Calculate the route
-            SELECT *
-            FROM pgr_bdAstar(
-            'SELECT id,
-                    source,
-                    target,
-                    cost,
-                    reverse_cost,
-                    x1,
-                    y1,
-                    x2,
-                    y2
-            FROM de_edges as e,
-            (SELECT ST_Expand(ST_Extent(the_geom), 0.1) as box FROM de_edges as b
-            WHERE b.source = '|| (SELECT id FROM start) ||'
-            OR b.source = ' || (SELECT id FROM destination) || ') as box WHERE e.the_geom && box.box',
-            array(SELECT id FROM start),
-            array(SELECT id FROM destination),
-            TRUE) as route
-            ");
-            
-  return(dbGetQuery(conn=con, statement = query))
-}
-```
