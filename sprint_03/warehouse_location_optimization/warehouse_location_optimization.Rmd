@@ -314,7 +314,7 @@ dbDisconnect(con_to_normal_db)
 
 
 
-```{r}
+```{r include=FALSE}
 routing_agg_results_enhanced <-
   routing_agg_results %>% 
   inner_join(customer_cluster_data_enhanced, by = c("end_vid" = "proj_vertex_id"))
@@ -362,19 +362,101 @@ auswertung_nach_distanz <-
 
 
 ```{r echo=FALSE}
-auswertung_nach_distanz %>% 
-  arrange(km_start_end_avg)
+auswertung_nach_distanz <-
+  auswertung_nach_distanz %>% 
+  ungroup() %>%
+  arrange(km_start_end_avg) %>%
+  mutate(rang = row_number())
 ```
+
+
+
+```{r}
+auswertung_nach_distanz
+```
+
+
+
+
+
+### Top-5 und Bottom-5 hinsichtlich durchschnittlicher Distanz zum Kunden
+```{r echo=FALSE}
+data_selection_1 = auswertung_nach_distanz[1:5, ]
+data_selection_2 = auswertung_nach_distanz[75:79, ]
+
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = data_selection_1$proj_start_lat,
+                   lng = data_selection_1$proj_start_long,
+                   radius = 6,
+                   label = data_selection_1$rang
+                   ) %>% 
+  addCircleMarkers(lat = data_selection_2$proj_start_lat,
+                   lng = data_selection_2$proj_start_long,
+                   radius = 6,
+                   color = "red",
+                   label = data_selection_2$rang
+                   ) 
+```
+Todo: Erklärung hierfür finden
+
+
+```{r}
+data_selection_2
+```
+
+
+
+
+
+### Die Kundencluster mit den meisten Kunden
+```{r}
+tmp <- 
+  customer_cluster_data_enhanced %>%
+  inner_join(customer_cluster_proj, by = "proj_vertex_id") %>% 
+  arrange(desc(anzahl_kunden_im_cluster))
+```
+
+```{r}
+tmp
+```
+
+
 
 
 ```{r echo=FALSE}
+row_selection <- 1:10
 leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
   addTiles() %>%
-  addCircleMarkers(lat = auswertung_nach_distanz[1:5,]$proj_start_lat,
-                   lng = auswertung_nach_distanz[1:5,]$proj_start_long,
-                   radius = 6,
-                   ) 
+  addCircleMarkers(lat = tmp[row_selection,]$proj_lat,
+                   lng = tmp[row_selection,]$proj_long,
+                   label = tmp[row_selection,]$anzahl_kunden_im_cluster,
+                   radius = 6
+                   )
 ```
+
+
+
+```{r}
+tmp
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -383,6 +465,18 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
 
 ## Kriterium: Anzahl Lieferungen
 Todo
+```{r}
+routing_agg_results_enhanced %>% head()
+```
+
+
+
+
+
+
+
+
+
 
 
 ## Kriterium: Umsatz
