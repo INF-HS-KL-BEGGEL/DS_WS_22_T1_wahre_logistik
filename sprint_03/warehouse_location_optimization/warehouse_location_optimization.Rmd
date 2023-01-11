@@ -208,6 +208,7 @@ anteile_der_kunden_ohne_stammdaten_am_umsatz %>%
 ```
 Die betreffenden Kunden gehören nicht zu unseren umsatzstarken Kunden. Selbst zusammen machen sie gerade einmal `r sum(anteile_der_kunden_ohne_stammdaten_am_umsatz$anteil_am_umsatz) * 100` am Gesamtumsatz aus.
 
+Todo: Vielleicht noch schauen, zu welchen Prozent der umsatzschwachen Kunden sie gehören
 Todo: Vielleicht diese Kunden auch nochmal hinsichtlich Bestellungen anschauen
 
 
@@ -239,6 +240,166 @@ Todo:
 Todo:
 
 1. ... Ergebnisse der Analysen hinsichtlich Distanz, Distanz & Umsatz, Distanz & #Bestellung, ...
+Todo:Achtung: Nicht die Gewichtung der Cluster vergessen
+
+
+
+
+
+
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+
+query <- "
+          SELECT 
+          	umsatz_pro_kunde.kndnr,
+          	summe_umsatz,
+          	anzahl_lieferungen,
+          	laengengrad AS long,
+          	breitengrad AS lat
+          FROM
+          
+          (
+          	SELECT kunde AS kndnr, SUM(vk_preis_num) AS summe_umsatz
+          	FROM verkaeufe
+          	GROUP BY kunde
+          ) AS umsatz_pro_kunde
+          
+          INNER JOIN
+          
+          (
+          	SELECT kunde AS kndnr, COUNT(DISTINCT(datum, lieferschein)) AS anzahl_lieferungen
+          	FROM verkaeufe
+          	GROUP BY kunde
+          ) AS bestellungen_pro_kunde
+          USING (kndnr) 
+          
+          INNER JOIN
+          
+          kundenstammdaten
+          ON bestellungen_pro_kunde.kndnr = kundenstammdaten.kndnr_tagless;
+        "
+
+
+customer_data_aggregated <- dbGetQuery(conn = con_to_normal_db, statement = query)
+dbDisconnect(con_to_normal_db)
+```
+
+
+
+```{r include=FALSE}
+customer_cluster_data_enhanced <- 
+  customer_cluster_proj %>% 
+  inner_join(customer_data_aggregated, by = c("original_lat" = "lat", "original_long" = "long")) %>% 
+  group_by(proj_vertex_id) %>% 
+  summarise(summe_umsatz = sum(summe_umsatz),
+            anzahl_lieferungen = sum(anzahl_lieferungen),
+            anzahl_kunden_im_cluster = n())
+```
+
+
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+query <- "
+          SELECT *
+          FROM routing_agg_results
+          ;
+        "
+
+
+routing_agg_results <- dbGetQuery(conn = con_to_normal_db, statement = query)
+dbDisconnect(con_to_normal_db)
+```
+
+
+
+
+```{r}
+routing_agg_results_enhanced <-
+  routing_agg_results %>% 
+  inner_join(customer_cluster_data_enhanced, by = c("end_vid" = "proj_vertex_id"))
+```
+
+
+
+
+
+
+
+Todo: Irgendwas stimmt bei customer_cluster_data_enhanced noch mit Umsatz und Anzahl Bestellungen nicht --> nochmal checken
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Kriterium: Distanz
+Welche Lager weisen im Durchschnitt eine geringe Distanz zum Kunden auf?
+```{r include=FALSE}
+# Die Distanz zu jedem Cluster muss noch mit der Anzahl der Kunden im jeweiligen Cluster gewichtet werden.
+# Achtung: Für den Durchschnitt nicht einfach avg() verwenden. Das würde in diesem Fall durch die Anzahl der Cluster und nicht (wie gewollt) durch die Anzahl der Kunden teilen.
+auswertung_nach_distanz <-
+  routing_agg_results_enhanced %>% 
+  mutate(gew_km_start_end = km_start_end*anzahl_kunden_im_cluster,
+         gew_km_end_start = km_end_start*anzahl_kunden_im_cluster) %>% 
+  group_by(start_vid,
+           proj_start_lat,
+           proj_start_long) %>% 
+  summarise(km_start_end_avg = sum(gew_km_start_end)/sum(anzahl_kunden_im_cluster),
+            km_end_start_avg = sum(gew_km_end_start)/sum(anzahl_kunden_im_cluster))
+```
+
+
+```{r echo=FALSE}
+auswertung_nach_distanz %>% 
+  arrange(km_start_end_avg)
+```
+
+
+```{r echo=FALSE}
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = auswertung_nach_distanz[1:5,]$proj_start_lat,
+                   lng = auswertung_nach_distanz[1:5,]$proj_start_long,
+                   radius = 6,
+                   ) 
+```
+
+
+
+
+
+
+## Kriterium: Anzahl Lieferungen
+Todo
+
+
+## Kriterium: Umsatz
+Todo
+
+
+
+
+## Ausblick
+- Gewicht
+- Volumen
+
+
+
+
+
+
 
 
 
