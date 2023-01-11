@@ -155,7 +155,7 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
                    lng = potential_warehouse_locations$proj_long,
                    radius = 6)
 ```
-Beim Mapping sind zum Teil auch verschiedene Rasterpunkte auf denselben Straßenknoten abgebildet worden. Deshalb wurde aus den `r raster_points %>% nrow()` Rasterpunkten `r potential_warehouse_locations %>% nrow()` Standortkandidaten in Deutschland.
+Beim Mapping sind zum Teil auch verschiedene Rasterpunkte auf denselben Straßenknoten abgebildet worden. Deshalb wurden aus den `r raster_points %>% nrow()` Rasterpunkten `r potential_warehouse_locations %>% nrow()` Standortkandidaten in Deutschland.
 
 **Todo: Vielleicht noch beispielhaft an ein paar Rasterpunkten das Mapping mit Pfeilen zeigen.**
 
@@ -244,6 +244,7 @@ anteile_der_kunden_ohne_stammdaten_am_umsatz %>%
     ) %>% 
   select(kndnr, umsatz_durch_kunde, anteil_in_prozent, kumulierter_anteil_in_prozent)
 ```
+Todo: hier nochmal an alle Berechnungen ran
 Die betreffenden Kunden gehören nicht zu unseren umsatzstarken Kunden. Selbst zusammen machen sie gerade einmal `r sum(anteile_der_kunden_ohne_stammdaten_am_umsatz$anteil_am_umsatz) * 100` am Gesamtumsatz aus.
 
 Todo: Vielleicht noch schauen, zu welchen Prozent der umsatzschwachen Kunden sie gehören
@@ -272,7 +273,7 @@ Todo:
 1. Dann erklären, was wir mit diesen Routen gemacht haben
 1. vllt. nochmal eine Visualisierung: gerade Linien von einem Lagerkandidat zu den Kundenclustern mit der Strecklänge als Kosten an der Linie
 
-
+1. alle Lager darstellen und die, die weggefallen sind einfärben
 
 
 
@@ -635,26 +636,26 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
                    ) 
 ```
 
+Todo: vielleicht die Ränge dauerhaft anzeigen (z. B. im Circle)
+
 
 
 ### Die Kundencluster mit den meisten Kunden
 Todo: Dieses Kapitel überdenken bzw. wenn es drin bleibt überarbeiten
-```{r}
+```{r include=FALSE}
 tmp <- 
   customer_cluster_data_enhanced %>%
   inner_join(customer_cluster_proj, by = "proj_vertex_id") %>% 
   arrange(desc(anzahl_kunden_im_cluster))
 ```
 
-```{r}
-tmp
-```
+
 
 
 
 
 ```{r echo=FALSE}
-row_selection <- 1:10
+row_selection <- 1:15
 leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
   addTiles() %>%
   addCircleMarkers(lat = tmp[row_selection,]$proj_lat,
@@ -663,7 +664,7 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
                    radius = 6
                    )
 ```
-
+Todo: Vielleicht die Lager noch dazu (und die Kundencluster dann einfach purple oder so)
 
 
 ```{r}
