@@ -236,6 +236,209 @@ Todo:
 
 
 
+
+
+```{r include=FALSE}
+generate_coord_values_string <- function(lats, longs) {
+  tibble(lats, longs) %>% 
+    mutate(coord_string = glue("({lats}, {longs})")) %>% 
+    summarise(coord_values_string = str_flatten(coord_string, collapse = ", ")) %>% 
+    pull(1) %>% 
+    return()
+}
+```
+
+
+
+```{r include=FALSE}
+get_bd_dijkstra_many_to_many_query_string <- function(start_coord_longs, start_coord_lats, destination_coord_longs, destination_coord_lats){
+
+  start_coords_values_string <- generate_coord_values_string(lats = start_coord_lats, longs = start_coord_longs)
+  destination_coords_values_string <- generate_coord_values_string(lats = destination_coord_lats, longs = destination_coord_longs)
+  
+  query_string <- glue("
+          -- Hole zu allen start_coords den jeweils nächstgelegenen Node
+           WITH start_vids AS (
+            	SELECT DISTINCT ON (id) id
+              FROM
+              	(SELECT lat, long
+              	FROM (
+              			VALUES {start_coords_values_string}
+              		 ) AS start_coords (lat, long)
+              	) AS start_coords
+              	 
+              	 CROSS JOIN LATERAL
+              	 
+              	 (
+              		SELECT id,
+              				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(start_coords.long, start_coords.lat), 4326) AS dist
+              		FROM de_edges_vertices_pgr AS vertices
+              		ORDER BY dist
+              		LIMIT 1
+              	)  AS vertices
+            ),
+            
+            
+            -- Hole zu allen end_coords den jeweils nächstgelegenen Node
+            end_vids AS (
+            	SELECT DISTINCT ON (id) id
+              FROM
+              	(SELECT lat, long
+              	FROM (
+              			VALUES {destination_coords_values_string}
+              		 ) AS end_coords (lat, long)
+              	) AS end_coords
+              	 
+              	 CROSS JOIN LATERAL
+              	 
+              	 (
+              		SELECT id,
+              				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(end_coords.long, end_coords.lat), 4326) AS dist
+              		FROM de_edges_vertices_pgr AS vertices
+              		ORDER BY dist
+              		LIMIT 1
+              	)  AS vertices
+            )
+            
+            -- Berechne die Routen von allen Start- zu allen End-Nodes
+            SELECT seq,
+                  path_seq,
+                  start_vid,
+                  end_vid,
+                  node,
+                  edge,
+                  ST_X(the_geom_node) as long,
+                  ST_Y(the_geom_node) as lat,
+                  ST_LengthSpheroid(the_geom_edge, 'SPHEROID[\"GRS_1980\",6378137,298.257222101]') as length_of_edge
+            FROM pgr_bdDijkstra(
+            	  'SELECT id, source, target, cost, reverse_cost
+            	  FROM de_edges',
+            	  ARRAY(SELECT id from start_vids), 
+            	  ARRAY(SELECT id from end_vids)
+            ) as routes
+            
+            INNER JOIN
+            
+    	      (SELECT id, the_geom as the_geom_node
+    	      FROM de_edges_vertices_pgr) as nodes
+    	      ON routes.node = nodes.id
+    	      
+    	      INNER JOIN
+            (SELECT id, the_geom as the_geom_edge
+            FROM de_edges) as edges
+            ON routes.edge = edges.id;
+            ")
+  
+  
+  return(query_string)
+}
+```
+
+
+
+
+```{r include=FALSE}
+# # Beispielhaft mal eine Route ausrechnen
+# start_coord_lats <- potential_warehouse_locations[12, "proj_lat"]
+# start_coord_longs <- potential_warehouse_locations[12, "proj_long"]
+# destination_coord_lats <- customer_cluster_proj$original_lat
+# destination_coord_longs <- customer_cluster_proj$original_long
+# 
+# 
+# # Routen berechnen
+# query_string <- get_bd_dijkstra_many_to_many_query_string(start_coord_longs = start_coord_longs,
+#                                                           start_coord_lats = start_coord_lats,
+#                                                           destination_coord_longs = destination_coord_longs,
+#                                                           destination_coord_lats = destination_coord_lats)
+# 
+# con_to_routing_db <- get_con_to_routing_db()
+# example_routes <- dbGetQuery(conn = con_to_routing_db, statement = query_string)
+# dbDisconnect(con_to_routing_db)
+```
+
+
+```{sql connection=con_to_routing_db, include=FALSE}
+--CREATE TABLE IF NOT EXISTS example_routes(
+  --seq integer NOT NULL,
+  --path_seq integer NOT NULL,
+  --start_vid integer NOT NULL,
+  --end_vid integer NOT NULL,
+  --node integer NOT NULL,
+  --edge integer NOT NULL,
+  --long double precision NOT NULL,
+  --lat double precision NOT NULL,
+  --length_of_edge double precision NOT NULL,
+  --primary key (seq, start_vid, end_vid)
+--)
+```
+
+
+```{r include=FALSE}
+# dbAppendTable(conn = con_to_routing_db, name = "example_routes", value = example_routes)
+```
+
+
+```{r include=FALSE}
+con_to_routing_db = get_con_to_routing_db()
+query <- "
+          SELECT *
+          FROM example_routes
+          where start_vid = 924791
+          ;
+        "
+example_routes = dbGetQuery(conn = con_to_routing_db, statement = query)
+dbDisconnect(con_to_routing_db)
+```
+
+
+```{r echo=FALSE}
+end_vids <- 
+  example_routes %>% 
+    distinct(end_vid) %>% 
+    pull()
+
+colors <- c("red", "green", "blue", "orange", "purple", "cyan", "yellow", "brown", "black", "lila")
+
+map <- 
+  leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+  addTiles()
+
+for(i in 1:length(end_vids)){
+  route <- 
+    example_routes %>% 
+    filter(end_vid == end_vids[i]) %>% 
+    select(lat, long)
+  
+  color <- colors[i %% (length(colors)+1)]
+  map <- 
+    map %>% 
+    addPolylines(lat = route$lat,
+                 lng = route$long,
+                 weight = 5,
+                 opacity = 0.5,
+                 color = color)
+}
+
+map <- 
+  map %>% 
+  addCircleMarkers(lat = start_coord_lats,
+                   lng = start_coord_longs,
+                   radius = 8,
+                   color = "red",
+                   opacity = 1,
+                   fillColor = "white",
+                   fillOpacity = 1)
+
+map
+```
+
+
+
+
+
+
+
+
 # Auswertung der Routing-Ergebnisse
 Todo:
 
@@ -565,6 +768,8 @@ Todo: Vielleicht Platz 1 - 3 besonders einfärben
 Todo
 
 
+
+Todo: Alle Ergebnis (z. B. alle Top-5-Lager) in eine Karte
 
 
 ## Ausblick
