@@ -96,7 +96,45 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
                    radius = 6)
 ```
 
-Das Raster umfasst `r raster_points %>% nrow()` Punkte, die sowohl in x- als auch y-Richtung jeweils einen Abstand von ca. TODO haben.
+Das Raster umfasst `r raster_points %>% nrow()` Punkte, die sowohl in x- als auch y-Richtung jeweils einen Abstand von ca. 86,3 km haben.
+
+
+
+
+```{r include=FALSE}
+tmp3 <-
+  raster_points %>% 
+  filter(long == raster_points[1,]$long) %>% 
+  arrange(lat)
+```
+
+```{r include=FALSE}
+for(i in 1:10){
+  dist = orthodrome_meters(lat1 = tmp3[i,]$lat,
+                            long1 = tmp3[i,]$long,
+                            lat2 = tmp3[i+1,]$lat,
+                            long2 = tmp3[i+1,]$long)
+  
+  print(dist)
+}
+```
+
+```{r include=FALSE}
+tmp <- tmp3
+
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>% 
+  addTiles() %>% 
+  addCircleMarkers(lat = tmp$lat,
+                   lng = tmp$long,
+                   radius = 6)
+```
+
+
+
+
+
+
+
 
 
 
