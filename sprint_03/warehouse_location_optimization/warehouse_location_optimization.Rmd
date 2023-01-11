@@ -206,7 +206,7 @@ query <- "
         "
 
 
-kunden_ohne_kundenstammdaten <- dbGetQuery(conn = con_to_normal_db, statement = query)
+kunden_ohne_stammdaten <- dbGetQuery(conn = con_to_normal_db, statement = query)
 dbDisconnect(con_to_normal_db)
 ```
 
@@ -214,7 +214,7 @@ dbDisconnect(con_to_normal_db)
 ```{r include=FALSE}
 con_to_normal_db <- get_con_to_normal_db()
 query <- "
-          SELECT kunde as kndnr, SUM(vk_preis_num) AS umsatz_durch_kunde
+          SELECT kunde AS kndnr, SUM(vk_preis_num) AS umsatz_durch_kunde
         	FROM verkaeufe
         	GROUP BY kunde;
         "
@@ -227,37 +227,25 @@ dbDisconnect(con_to_normal_db)
 
 
 ```{r include=FALSE}
-anteile_der_kunden_ohne_stammdaten_am_umsatz <- 
-  umsatz_je_kunde %>% 
-  mutate(anteil_am_umsatz = umsatz_durch_kunde/sum(umsatz_durch_kunde)) %>% 
-  arrange(desc(anteil_am_umsatz)) %>% 
-  mutate(kumulierter_anteil = cumsum(anteil_am_umsatz)) %>% 
-  inner_join(kunden_ohne_kundenstammdaten, by = "kndnr") %>% 
-  arrange(kumulierter_anteil)
+kunden_ohne_stammdaten_enhanced <-
+  umsatz_je_kunde %>%
+  mutate(anteil_am_gesamtumsatz = umsatz_durch_kunde/sum(umsatz_durch_kunde)) %>% 
+  arrange(desc(anteil_am_gesamtumsatz)) %>%
+  mutate(kumulierter_anteil = cumsum(anteil_am_gesamtumsatz),
+         rang = row_number()) %>% 
+  inner_join(kunden_ohne_stammdaten, by = "kndnr") %>% 
+  arrange(rang) 
 ```
+
 
 ```{r echo=FALSE}
-anteile_der_kunden_ohne_stammdaten_am_umsatz %>% 
-  mutate(
-    anteil_in_prozent = round(anteil_am_umsatz*100, digits = 2),
-    kumulierter_anteil_in_prozent = round(kumulierter_anteil*100, digits = 2)
-    ) %>% 
-  select(kndnr, umsatz_durch_kunde, anteil_in_prozent, kumulierter_anteil_in_prozent)
+kunden_ohne_stammdaten_enhanced
 ```
-Todo: hier nochmal an alle Berechnungen ran
-Die betreffenden Kunden gehören nicht zu unseren umsatzstarken Kunden. Selbst zusammen machen sie gerade einmal `r sum(anteile_der_kunden_ohne_stammdaten_am_umsatz$anteil_am_umsatz) * 100` am Gesamtumsatz aus.
 
-Todo: Vielleicht noch schauen, zu welchen Prozent der umsatzschwachen Kunden sie gehören
+Die betreffenden Kunden gehören nicht zu unseren umsatzstarken Kunden. Selbst zusammen machen sie gerade einmal `r round(sum(kunden_ohne_stammdaten_enhanced$anteil_am_gesamtumsatz) * 100, digits = 2)` % am Gesamtumsatz aus.
+
+
 Todo: Vielleicht diese Kunden auch nochmal hinsichtlich Bestellungen anschauen
-
-
-
-
-
-
-
-
-
 
 
 
