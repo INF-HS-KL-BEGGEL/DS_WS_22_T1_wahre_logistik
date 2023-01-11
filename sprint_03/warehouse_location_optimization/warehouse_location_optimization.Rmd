@@ -395,22 +395,6 @@ get_bd_dijkstra_many_to_many_query_string <- function(start_coord_longs, start_c
 ```
 
 
-```{sql connection=con_to_routing_db, include=FALSE}
---CREATE TABLE IF NOT EXISTS example_routes(
-  --seq integer NOT NULL,
-  --path_seq integer NOT NULL,
-  --start_vid integer NOT NULL,
-  --end_vid integer NOT NULL,
-  --node integer NOT NULL,
-  --edge integer NOT NULL,
-  --long double precision NOT NULL,
-  --lat double precision NOT NULL,
-  --length_of_edge double precision NOT NULL,
-  --primary key (seq, start_vid, end_vid)
---)
-```
-
-
 ```{r include=FALSE}
 # dbAppendTable(conn = con_to_routing_db, name = "example_routes", value = example_routes)
 ```
@@ -427,6 +411,19 @@ query <- "
 example_routes = dbGetQuery(conn = con_to_routing_db, statement = query)
 dbDisconnect(con_to_routing_db)
 ```
+
+
+```{r include=FALSE}
+tmp <- 
+  example_routes %>% 
+  filter(path_seq == 1)
+
+start_coord_lats = tmp$lat
+start_coord_longs = tmp$long
+
+rm(tmp)
+```
+
 
 
 ```{r echo=FALSE}
