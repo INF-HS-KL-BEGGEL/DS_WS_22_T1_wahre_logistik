@@ -499,16 +499,62 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
 
 
 
-## Kriterium: Anzahl Lieferungen
-Todo
-```{r}
-routing_agg_results_enhanced %>% head()
+## Kriterium: Durchschnittliche Strecke pro Lieferung
+Bei welchen Lagern erreicht man eine geringe durchschnittliche Distanz pro Lieferung?
+
+
+```{r include=FALSE}
+auswertung_nach_anzahl_lieferungen <-
+  routing_agg_results_enhanced %>% 
+  mutate(gew_km_start_end = km_start_end * anzahl_lieferungen,
+         gew_km_end_start = km_end_start * anzahl_lieferungen) %>% 
+  group_by(start_vid,
+           proj_start_lat,
+           proj_start_long) %>% 
+  summarise(avg_km_start_end_pro_lieferung = sum(gew_km_start_end)/sum(anzahl_lieferungen),
+            avg_km_end_start_pro_lieferung = sum(gew_km_end_start)/sum(anzahl_lieferungen))
+```
+
+
+```{r include=FALSE}
+# Noch aufsteigend sortieren
+auswertung_nach_anzahl_lieferungen <- 
+  auswertung_nach_anzahl_lieferungen %>% 
+  ungroup() %>% 
+  arrange(avg_km_start_end_pro_lieferung) %>% 
+  mutate(rang = row_number())
 ```
 
 
 
+```{r echo=FALSE}
+auswertung_nach_anzahl_lieferungen
+```
 
 
+
+```{r echo=FALSE}
+data_selection_1 = auswertung_nach_anzahl_lieferungen[1:5, ]
+data_selection_2 = auswertung_nach_anzahl_lieferungen[75:79, ]
+
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = data_selection_1$proj_start_lat,
+                   lng = data_selection_1$proj_start_long,
+                   radius = 6,
+                   label = data_selection_1$rang
+                   ) %>% 
+  addCircleMarkers(lat = data_selection_2$proj_start_lat,
+                   lng = data_selection_2$proj_start_long,
+                   radius = 6,
+                   color = "red",
+                   label = data_selection_2$rang
+                   ) 
+```
+
+
+Todo: Vielleicht noch die km in die Label
+Todo: Vielleicht Platz 1 - 3 besonders einfärben
 
 
 
