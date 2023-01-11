@@ -344,12 +344,12 @@ Todo: Irgendwas stimmt bei customer_cluster_data_enhanced noch mit Umsatz und An
 
 
 
-## Kriterium: Distanz
+## Kriterium: Durchschnittliche Distanz zum Kunden
 Welche Lager weisen im Durchschnitt eine geringe Distanz zum Kunden auf?
 ```{r include=FALSE}
 # Die Distanz zu jedem Cluster muss noch mit der Anzahl der Kunden im jeweiligen Cluster gewichtet werden.
 # Achtung: Für den Durchschnitt nicht einfach avg() verwenden. Das würde in diesem Fall durch die Anzahl der Cluster und nicht (wie gewollt) durch die Anzahl der Kunden teilen.
-auswertung_nach_distanz <-
+auswertung_nach_avg_distanz_zum_kunden <-
   routing_agg_results_enhanced %>% 
   mutate(gew_km_start_end = km_start_end*anzahl_kunden_im_cluster,
          gew_km_end_start = km_end_start*anzahl_kunden_im_cluster) %>% 
@@ -361,9 +361,9 @@ auswertung_nach_distanz <-
 ```
 
 
-```{r echo=FALSE}
-auswertung_nach_distanz <-
-  auswertung_nach_distanz %>% 
+```{r include=FALSE}
+auswertung_nach_avg_distanz_zum_kunden <-
+  auswertung_nach_avg_distanz_zum_kunden %>% 
   ungroup() %>%
   arrange(km_start_end_avg) %>%
   mutate(rang = row_number())
@@ -371,18 +371,16 @@ auswertung_nach_distanz <-
 
 
 
-```{r}
-auswertung_nach_distanz
+```{r echo=FALSE}
+auswertung_nach_avg_distanz_zum_kunden
 ```
-
-
 
 
 
 ### Top-5 und Bottom-5 hinsichtlich durchschnittlicher Distanz zum Kunden
 ```{r echo=FALSE}
-data_selection_1 = auswertung_nach_distanz[1:5, ]
-data_selection_2 = auswertung_nach_distanz[75:79, ]
+data_selection_1 = auswertung_nach_avg_distanz_zum_kunden[1:5, ]
+data_selection_2 = auswertung_nach_avg_distanz_zum_kunden[75:79, ]
 
 leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
   addTiles() %>%
@@ -398,18 +396,11 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
                    label = data_selection_2$rang
                    ) 
 ```
-Todo: Erklärung hierfür finden
-
-
-```{r}
-data_selection_2
-```
-
-
 
 
 
 ### Die Kundencluster mit den meisten Kunden
+Todo: Dieses Kapitel überdenken bzw. wenn es drin bleibt überarbeiten
 ```{r}
 tmp <- 
   customer_cluster_data_enhanced %>%
@@ -443,12 +434,57 @@ tmp
 
 
 
+## Kriterium: Durchschnittliche Distanz zum Kundencluster
+Welche Lager weisen im Durchschnitt eine geringe Distanz zu Kunden-**Clustern** auf?
+
+```{r include=FALSE}
+auswertung_nach_avg_distanz_zu_cluster <-
+  routing_agg_results_enhanced %>% 
+  group_by(start_vid,
+           proj_start_lat,
+           proj_start_long) %>% 
+  summarise(km_start_end_avg = mean(km_start_end),
+            km_end_start_avg = mean(km_end_start))
+```
+
+
+```{r include=FALSE}
+# Noch aufsteigend sortieren
+auswertung_nach_avg_distanz_zu_cluster <-
+  auswertung_nach_avg_distanz_zu_cluster %>% 
+  ungroup() %>%
+  arrange(km_start_end_avg) %>%
+  mutate(rang = row_number())
+```
 
 
 
 
 
+```{r echo=FALSE}
+auswertung_nach_avg_distanz_zu_cluster
+```
 
+
+
+```{r echo=FALSE}
+data_selection_1 = auswertung_nach_avg_distanz_zu_cluster[1:5, ]
+data_selection_2 = auswertung_nach_avg_distanz_zu_cluster[75:79, ]
+
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = data_selection_1$proj_start_lat,
+                   lng = data_selection_1$proj_start_long,
+                   radius = 6,
+                   label = data_selection_1$rang
+                   ) %>% 
+  addCircleMarkers(lat = data_selection_2$proj_start_lat,
+                   lng = data_selection_2$proj_start_long,
+                   radius = 6,
+                   color = "red",
+                   label = data_selection_2$rang
+                   ) 
+```
 
 
 
