@@ -43,3 +43,5 @@ vignettes/*.pdf
 # Notebook files
 *.nb.html
 *.html
+
+.RDataTmp
