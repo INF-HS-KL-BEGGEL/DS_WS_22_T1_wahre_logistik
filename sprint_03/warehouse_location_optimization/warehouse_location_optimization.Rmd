@@ -459,6 +459,96 @@ map
 
 
 
+## Nicht routbare Kunden
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+query_string <- "
+                SELECT DISTINCT(end_vid) AS proj_vertex_id
+                FROM routing_agg_results
+                ;
+                "
+routable_customer_cluster_vertex_ids <- dbGetQuery(conn = con_to_normal_db, statement = query_string)
+```
+
+
+```{r include=FALSE}
+non_routable_customer_cluster <-
+  customer_cluster_proj %>% 
+  filter(!proj_vertex_id %in% as.integer(routable_customer_cluster_vertex_ids$proj_vertex_id))
+```
+
+
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+query <- "
+          SELECT kndnr_tagless as kndnr, laengengrad as long, breitengrad as lat
+        	FROM kundenstammdaten
+        	;
+        "
+
+
+kundenstammdaten <- dbGetQuery(conn = con_to_normal_db, statement = query)
+dbDisconnect(con_to_normal_db)
+```
+
+
+```{r include=FALSE}
+non_routable_customers <-
+  non_routable_customer_cluster %>% 
+  inner_join(kundenstammdaten, by = c("original_lat" = "lat", "original_long" = "long"))
+```
+
+
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+query <- "
+          SELECT kunde AS kndnr, SUM(vk_preis_num) AS umsatz_durch_kunde
+        	FROM verkaeufe
+        	GROUP BY kunde;
+        "
+
+
+umsatz_je_kunde <- dbGetQuery(conn = con_to_normal_db, statement = query)
+dbDisconnect(con_to_normal_db)
+
+umsatz_je_kunde_enhanced <- 
+  umsatz_je_kunde %>% 
+  mutate(anteil_am_gesamtumsatz = umsatz_durch_kunde/sum(umsatz_durch_kunde)) %>% 
+  arrange(desc(anteil_am_gesamtumsatz)) %>% 
+  mutate(anteil_kumuliert = cumsum(anteil_am_gesamtumsatz),
+         rang = row_number())
+```
+
+
+```{r include=FALSE}
+non_routable_customers_enhanced <- 
+  non_routable_customers %>% 
+  select(-proj_vertex_id, -proj_lat, -proj_long, -proj_the_geom, -original_lat, -original_long) %>% 
+  inner_join(umsatz_je_kunde_enhanced, by = "kndnr") %>% 
+  arrange(rang)
+```
+
+
+```{r}
+non_routable_customers_enhanced
+```
+
+Die nicht routbaren Kunden sind hinsichtlich des Umsatzes nicht zu vernachlässigen. Zusammen machen sie `r round(sum(non_routable_customers_enhanced$anteil_am_gesamtumsatz) * 100, digits = 2)` % vom Gesamtumsatz aus
+
+
+
+
+
+## Nicht routbare Lagerkandidaten
+Todo
+
+
+
+
+
+
+
+
 
 
 
