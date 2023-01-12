@@ -257,10 +257,7 @@ Todo: Vielleicht diese Kunden auch nochmal hinsichtlich Bestellungen anschauen
 ## Routenberechnung
 Todo:
 
-1. ein paar Beispielrouten (vielleicht zu zwei Lagerkandidaten) visualisieren
-1. Dann erklären, was wir mit diesen Routen gemacht haben
 1. vllt. nochmal eine Visualisierung: gerade Linien von einem Lagerkandidat zu den Kundenclustern mit der Strecklänge als Kosten an der Linie
-
 1. alle Lager darstellen und die, die weggefallen sind einfärben
 
 
@@ -554,16 +551,6 @@ Todo
 
 
 # Auswertung der Routing-Ergebnisse
-Todo:
-
-1. ... Ergebnisse der Analysen hinsichtlich Distanz, Distanz & Umsatz, Distanz & #Bestellung, ...
-Todo:Achtung: Nicht die Gewichtung der Cluster vergessen
-
-
-
-
-
-
 ```{r include=FALSE}
 con_to_normal_db <- get_con_to_normal_db()
 
@@ -629,28 +616,11 @@ dbDisconnect(con_to_normal_db)
 ```
 
 
-
-
 ```{r include=FALSE}
 routing_agg_results_enhanced <-
   routing_agg_results %>% 
   inner_join(customer_cluster_data_enhanced, by = c("end_vid" = "proj_vertex_id"))
 ```
-
-
-
-
-
-
-
-Todo: Irgendwas stimmt bei customer_cluster_data_enhanced noch mit Umsatz und Anzahl Bestellungen nicht --> nochmal checken
-
-
-
-
-
-
-
 
 
 
@@ -726,9 +696,6 @@ tmp <-
   inner_join(customer_cluster_proj, by = "proj_vertex_id") %>% 
   arrange(desc(anzahl_kunden_im_cluster))
 ```
-
-
-
 
 
 
@@ -899,11 +866,11 @@ Todo: Alle Ergebnis (z. B. alle Top-5-Lager) in eine Karte
 
 
 
-# Plausi-Checks und Co
-Todo:
 
-1. Es gibt Kunden, zu denen wir keine Route gefunden haben. Wie wichtig sind diese hinsichtlich Umsatz, Anzahl Bestellungen etc.?
-1. Es gibt Kunden, die kommen in unserer Kundenstammdaten-Tabelle nicht vor. Zu diesen können wir logischerweise auch keine Routen berechnen, da uns die Standort-Koordinaten fehlen. Wie wichtig sind diese hinsichtlich Umsatz, Anzahl Bestellungen etc.?
+
+
+
+
 
 
 
