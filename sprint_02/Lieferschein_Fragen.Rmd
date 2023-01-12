@@ -1,5 +1,5 @@
 ---
-title: "Lieferschein_Fragen"
+title: "Lieferschein Fragen"
 author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
 output:
   html_notebook:
@@ -9,9 +9,12 @@ output:
     number_sections: true
 ---
 
-# Datenbankverbindung aufbauen
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
 
-```{r message=FALSE, warning=FALSE}
+<!-- # Datenbankverbindung aufbauen -->
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
 library(DBI)
 library(odbc)
 library(dplyr)
@@ -19,11 +22,16 @@ library(lubridate)
 library(tidyverse)
 library(leaflet)
 library(plotly)
+library(tidyr)
+library(stringr)
+library(glue)
+library(ggplot2)
+library(rlang)
 readRenviron("../env_files/.Renviron.postgres")
 ger_num <- scales::label_comma(accuracy = .01, big.mark = ".", decimal.mark = ",")
 ```
 
-```{r}
+```{r echo=FALSE}
 con <- DBI::dbConnect(odbc::odbc(),
                       Driver   = "PostgreSQL Unicode",
                       Server   = Sys.getenv("host"),
@@ -33,24 +41,24 @@ con <- DBI::dbConnect(odbc::odbc(),
                       Port     = Sys.getenv("port"))
 ```
 
-# Lade Verkäufe
-```{r}
+<!-- # Lade Verkäufe -->
+```{r echo=FALSE}
 vk <- dbGetQuery(conn=con, statement = "select * from verkaeufe")
 ```
 
 # Lieferschein Präsentationsfragen
 ## Wenn uns die Menge der Artikel interessiert
-Interessant: Es gibt 6 Verkäufe mit Abgang zwischen 0 und 1
+<!-- Interessant: Es gibt 6 Verkäufe mit Abgang zwischen 0 und 1 -->
 
-```{r}
+```{r , echo=FALSE}
 sum_abg <- sum(vk$abgang)
-sum_abg
+#sum_abg
 ger_num(sum_abg)
 ```
 
 ### Welche Gesamtmenge an Artikeln verlässt das Lager pro Tag?
+```{r echo=FALSE}
 
-```{r}
 abg_per_day <- vk %>% group_by(datum) %>% summarize(sum_abg=sum(abgang))
 #abg_per_day <- abg_per_day %>% complete(datum = seq.Date(min(datum), max(datum), by="day")) %>% mutate(sum_abg = ifelse(is.na(sum_abg), 0, sum_abg)) 
 abg_per_day
@@ -60,25 +68,28 @@ ggplot(abg_per_day, aes(x=datum, y=sum_abg)) + geom_line()
 
 ### Wie viele unterschiedliche Artikel verlassen das Lager pro Tag?
 
-```{r}
+
+```{r echo=FALSE}
 vk_per_day_per_type <- vk %>% group_by(datum) %>% summarise(different_materials=n_distinct(materialnummer))
 vk_per_day_per_type
 ggplot(vk_per_day_per_type, aes(x=datum, y=different_materials)) + geom_line()
 ```
 
 ### Welche Anzahl eines Artikels verlassen das Lager pro Tag?
-TODO: Was/wie visualisieren?
-```{r}
+<!-- TODO: Was/wie visualisieren? -->
+```{r  message=FALSE, warning=FALSE, echo=FALSE}
 abg_per_day_single_material <- vk %>% group_by(datum,materialnummer) %>% summarize(sum_abg=sum(abgang))
 abg_per_day_single_material
 ggplot(abg_per_day_single_material, aes(x=datum, y=sum_abg)) + geom_point()
 #plot_ly(abg_per_day_single_material, x = ~datum, y = ~sum_abg, z = ~materialnummer) %>% add_markers()
+
+abg_per_day_single_material <- abg_per_day_single_material %>% filter(sum_abg > 100000)
+plot_ly(abg_per_day_single_material, x = ~datum, y = ~sum_abg, type = 'scatter', mode = 'markers', text=~paste("Mat.Nr.: ", materialnummer))
 ```
 
 ## Wenn uns der Umsatz der Artikel interessiert
 ### Welcher Umsatz wird pro Tag generiert?
-
-```{r}
+```{r echo=FALSE}
 vk_per_day <- vk %>% group_by(datum) %>% summarize(sum_vk_preis_num=sum(vk_preis_num))
 
 # vk_per_day
@@ -90,18 +101,20 @@ ggplot(vk_per_day, aes(x=datum, y=sum_vk_preis_num)) + geom_line()
 ```
 
 ### Welcher Umsatz wird mit jedem einzelnen Artikel pro Tag generiert?
-TODO: Was/wie visualisieren?
-```{r}
+<!-- TODO: Was/wie visualisieren? -->
+```{r message=FALSE, warning=FALSE, echo=FALSE}
 vk_per_day_single_material <- vk %>% group_by(datum,materialnummer) %>% summarize(sum_vk=sum(vk_preis_num))
 vk_per_day_single_material
 #plot_ly(vk_per_day_single_material, x = ~datum, y = ~sum_vk, z = ~materialnummer) %>% add_markers()
+ggplot(vk_per_day_single_material, aes(x=datum, y=sum_vk)) + geom_point()
 ```
 
 
 ## Wenn uns die Kunden interessieren
 ### Wie sind die Artikel auf die Kunden verteilt? 
-TODO: Was/wie visualisieren? => auf ABC bezogen
-```{r}
+<!-- TODO: Was/wie visualisieren? => auf ABC bezogen -->
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+
 vk_per_kunde <- vk %>% group_by(kunde) %>% summarize(num_distinct_materials=n_distinct(materialnummer)) %>% arrange(desc(num_distinct_materials)) %>% mutate(rang=row_number())
 vk_per_kunde
 
@@ -109,37 +122,193 @@ mean_distinct_mat <- vk_per_kunde %>% summarise(mean_distinct_mat=mean(num_disti
 ceiling(mean_distinct_mat)
 ```
 ### Wie ist der Umsatz auf die Kunden verteilt?
-TODO: Was/wie visualisieren? => auf ABC mappen
-```{r}
+<!-- TODO: Was/wie visualisieren? => auf ABC mappen -->
+```{r message=FALSE, warning=FALSE, echo=FALSE}
 vk_per_kunde <- vk %>% group_by(kunde) %>% summarize(umsatz=sum(vk_preis_num)) %>% arrange(desc(umsatz)) %>% mutate(rang=row_number())
 vk_per_kunde
 ```
 
 ## Wenn und die Kommissionierung interessiert
 ### Wieviele Lieferscheine werden am Tag bearbeitet?
-```{r}
-ls_per_day <- vk %>% group_by(datum) %>% summarize(num_ls=n())
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+ls_per_day <- vk %>% group_by(datum) %>% summarize(num_ls=n_distinct(lieferschein))
 ls_per_day
 ggplot(ls_per_day, aes(x=datum, y=num_ls)) + geom_line()
 ```
 ### Wieviele Positionen sind damit verbunden?
-
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+pos_per_day <- vk %>% group_by(datum) %>% summarize(num_pos=n())
+pos_per_day
+ggplot(pos_per_day, aes(x=datum, y=num_pos)) + geom_line()
+```
 
 ### Wie ist das tägliche Sortiment strukturiert?
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+vk_by_mat <- vk %>% group_by(materialnummer) %>% summarise(sell_days=n_distinct(datum), abg_year=sum(abgang), vk_year=sum(vk_preis_num)) %>% mutate(itm_per_day=(abg_year/sell_days)) %>% arrange(desc(itm_per_day)) %>% 
+filter(sell_days > 150, itm_per_day > 500) %>% 
+mutate(mat_id = row_number())
+
+vk_by_mat
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+#ggplot(vk_by_mat, aes(x=mat_id, y=itm_per_day)) + geom_line()
+
+plot_ly(vk_by_mat, x = ~sell_days, y = ~itm_per_day, color = ~vk_year, type = 'scatter', mode = 'markers', text=~paste("Mat.Nr.: ",materialnummer,"\nEur/Jahr: ", vk_year))
+
+#plot_ly(vk_by_mat, x = ~mat_id, y = ~itm_per_day, z = ~sell_days) %>% add_markers()
+```
 
 
 ## Wenn uns die Klassifizierung der Artikel interessiert:
 ### Handelt es sich bei den Artikeln um A, B oder C-Artikel?
+
+```{r include=FALSE}
+get_table_as_tibble <- function(connection, table_name){
+  query <- glue("select * from {table_name}")
+  tmp <- dbGetQuery(conn=connection, statement = query)
+  return(as_tibble(tmp))
+}
+```
+
+```{r include=FALSE}
+verkaeufe <- get_table_as_tibble(con, "verkaeufe")
+```
+
+```{r include=FALSE}
+# Funktion zum Durchführen von ABC-Analysen
+# 1. Sortiere die Datensätze absteigend nach dem gewählten Merkmal (column)
+# 2. Berechne den prozentualen Anteil
+# 3. Kumuliere die prozentualen Anteile
+# 4. Ordne die Datensätze gemäß der gewählten Grenzen (thresholds) den Klassen zu (A, B, ...)
+
+abc_analyse <- function(.data, column, thresholds){
+  classes <- LETTERS[1:(length(thresholds)+1)]
+  
+  class_mappings <- c(glue('anteil_kumuliert <= {thresholds[1]} ~ "{classes[1]}"'))
+  for(i in 2:length(thresholds)){
+    class_mappings <- c(class_mappings, glue('anteil_kumuliert > {thresholds[i-1]} & anteil_kumuliert <= {thresholds[i]} ~ "{classes[i]}"'))
+  }
+  class_mappings <- c(class_mappings, glue('TRUE ~ "{classes[length(classes)]}"'))
+  class_mappings <- parse_exprs(class_mappings)
+  
+  .data %>% 
+    arrange(desc(!!ensym(column))) %>% 
+    mutate(rang = row_number()) %>% 
+    mutate(anteil = !!ensym(column)/sum(!!ensym(column))) %>% 
+    mutate(anteil_kumuliert = cumsum(anteil)) %>%
+    mutate(klasse = case_when(!!!class_mappings)) %>% 
+    mutate(klasse = as.factor(klasse)) %>%
+    return()
+}
+```
+
+```{r include=FALSE}
+abc_analyse_nach_umsatz <- verkaeufe %>% 
+  group_by(materialnummer) %>% 
+  summarise(umsatz = sum(vk_preis_num)) %>% 
+  abc_analyse(column = umsatz, thresholds = c(0.4, 0.8, 0.96, 0.99)) %>% 
+  rename(anteil_umsatz = anteil, anteil_umsatz_kumuliert = anteil_kumuliert)
+```
+
+```{r include=FALSE}
+# Führe eine ABC-Analyse der Artikel nach dem Umsatz durch.
+thresholds <- c(0.4, 0.8, 0.96, 0.99)
+
+abc_analyse_material_nach_umsatz <- verkaeufe %>% 
+  group_by(materialnummer) %>% 
+  summarise(umsatz = sum(vk_preis_num)) %>% 
+  abc_analyse(column = umsatz, thresholds = thresholds) %>% 
+  rename(anteil_umsatz = anteil, anteil_umsatz_kumuliert = anteil_kumuliert)
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+abc_analyse_material_nach_umsatz
+```
+
 ### In welcher Kombination verlassen die Artikel das Lager? (AA, AB, …)
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+
+abc_analyse_material_nach_umsatz_join <- abc_analyse_material_nach_umsatz %>% select(materialnummer, klasse)
+
+vk_class <- verkaeufe %>% inner_join(abc_analyse_material_nach_umsatz_join)
+
+vk_class_mat <- vk_class %>% select(materialnummer, lieferschein, klasse) 
+
+#vk_class_mat <- vk_class_mat %>% head(50)
+
+vx <- vk_class_mat %>% group_by(lieferschein) %>%  summarise(involved_classes = paste0(klasse, collapse = ""), n_pos=n())
+
+vz <- vx %>% rowwise() %>% mutate(dist_inv_classes=paste0(sort(unique(unlist(strsplit(involved_classes, "")))), collapse = "")) %>% filter(nchar(dist_inv_classes) > 1)
+
+vff <- vz %>% group_by(dist_inv_classes) %>%  summarize(n_dist_inv_classes=n())
+```
+
+```{r include=FALSE}
+vec_comb_rep <- function(in_string) {
+  v <- c()
+  for (i in 1:nchar(in_string)) {
+    for (j in i:nchar(in_string)) {
+      v <- append(v, paste0(substring(in_string, i, i), substring(in_string, j, j)))
+    }
+  }
+  return(v)
+}
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+gesamt <- vff %>% summarize(sum_dist_inv_classes=sum(n_dist_inv_classes))
+
+gesamt <- gesamt$sum_dist_inv_classes[1]
+
+gesamt
+
+vff <- vff %>% mutate(rel_n_dist_inv_classes=(n_dist_inv_classes/gesamt))
+
+vff <- vff %>% rowwise() %>% mutate(full_classes=paste0(vec_comb_rep(dist_inv_classes), collapse = ","))
+
+vff
+#plot_ly(vff, x = ~dist_inv_classes, y = ~n_dist_inv_classes, type = 'scatter', mode = 'markers')
+plot_ly(vff, x = ~dist_inv_classes, y = ~rel_n_dist_inv_classes, type = 'scatter', mode = 'markers', text=~paste("Abs.: ", n_dist_inv_classes))
+```
+
+
+
+
+
 ### Welcher Umsatz wird pro Tag mit A, B oder C-Artikeln jeweils generiert?
+
+```{r echo=FALSE}
+# Erstelle ein Facet-Grid. Dadurch betrachten wir für jede Klasse einen eigenen Plot und können somit die Homogenität der Klassen überprüfen.
+abc_analyse_material_nach_umsatz %>% 
+  group_by(klasse) %>% 
+  mutate(anteil_artikel_in_klasse = row_number()/n(), anteil_umsatz_kumuliert_in_klasse = cumsum(anteil_umsatz)/sum(anteil_umsatz)) %>% 
+  ggplot() +
+  geom_line(mapping = aes(x = anteil_artikel_in_klasse*100, anteil_umsatz_kumuliert_in_klasse*100), color="blue") +
+  geom_hline(yintercept = 0, linewidth=0.8) +
+  geom_vline(xintercept = 0, linewidth=0.8) +
+  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  facet_wrap(~klasse) +
+  geom_label(data=material_umsatz_je_klasse, mapping = aes(x=50, y=15, label=glue("{umsatz_in_klasse_formatiert} €")), hjust="middle", vjust="middle", color="black", fill="white") +
+  coord_fixed(ratio=1) +
+  labs(
+    x = "Anteil Artikel in der jew. Klasse (in %)",
+    y = "Anteil am Umsatz in der jew. Klasse (in %)"
+  )
+```
+
 
 # Lieferschein Zusatzfragen
 ## Lieferscheine mit nur einer Position
-```{r}
+```{r message=FALSE, warning=FALSE, echo=FALSE}
 unique_lieferscheine <- vk %>% group_by(lieferschein) %>% summarise(anzahl=n(), lf_sum_umsatz=sum(vk_preis_num), lf_sum_abgang=sum(abgang)) %>% filter(anzahl == 1)
 ```
 
-```{r}
+```{r warning=FALSE, echo=FALSE}
 num_unique_lieferscheine <- unique_lieferscheine %>% summarise(rows=n(), gesamtumsatz=sum(lf_sum_umsatz), gesamtabgang=sum(lf_sum_abgang))
 
 cat('Anzahl:' , num_unique_lieferscheine$rows)
@@ -148,15 +317,10 @@ cat('\nGesamtabgänge:' , ger_num(num_unique_lieferscheine$gesamtabgang))
 ```
 
 
-```{sql connection=con}
-SELECT COUNT(*) AS Anzahl FROM verkaeufe WHERE lieferschein IN (SELECT lieferschein FROM verkaeufe GROUP BY lieferschein HAVING COUNT(*) = 1);
-SELECT SUM(vk_preis_num) AS Gesamtumsatz FROM verkaeufe WHERE lieferschein IN (SELECT lieferschein FROM verkaeufe GROUP BY lieferschein HAVING COUNT(*) = 1);
-SELECT SUM(abgang) AS Gesamtabgaenge FROM verkaeufe WHERE lieferschein IN (SELECT lieferschein FROM verkaeufe GROUP BY lieferschein HAVING COUNT(*) = 1);
-```
 
 ## Teillieferungen (Gleiche Lieferscheinnr. aber unterschiedliches Datum)
  
-```{r}
+```{r message=FALSE, warning=FALSE, echo=FALSE}
 teillieferungen <- vk %>% group_by(lieferschein) %>% filter(datum > min(datum)) %>% summarise(anzahl=n(), lf_sum_umsatz=sum(vk_preis_num), lf_sum_abgang=sum(abgang))
 
 sum_teillieferungen <- teillieferungen %>% summarise(rows=n(), gesamtumsatz=sum(lf_sum_umsatz), gesamtabgang=sum(lf_sum_abgang))
@@ -166,7 +330,32 @@ cat('\nGesamtumsatz:' , sum_teillieferungen$gesamtumsatz, '€')
 cat('\nGesamtabgänge:' , sum_teillieferungen$gesamtabgang)
 ```
 
-# Datenbankverbindung beenden
-```{r}
+
+## Extrem lange Lieferscheine
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+lieferscheine <- vk %>% group_by(lieferschein) %>% summarize(n_pos=n())
+#abg_per_day <- abg_per_day %>% complete(datum = seq.Date(min(datum), max(datum), by="day")) %>% mutate(sum_abg = ifelse(is.na(sum_abg), 0, sum_abg)) 
+
+
+#lieferscheine$bucket <- ntile(lieferscheine$n_pos, 10)
+
+lieferscheine <- lieferscheine %>% arrange(desc(n_pos))%>% mutate(id = row_number())
+
+lieferscheine
+
+lf_sum <- lieferscheine %>% group_by(n_pos) %>% summarize(count_n_pos = n())
+
+#lf_sum
+
+lieferscheine_filtered <- lieferscheine %>% filter(n_pos > 100)
+
+#plot_ly(lf_sum, x = ~n_pos, y = ~count_n_pos, type = 'scatter', mode = 'markers')
+plot_ly(lieferscheine_filtered, x = ~id, y = ~n_pos, type = 'scatter', mode = 'markers', text=~paste("Ls-Nr.: ", lieferschein))
+```
+
+
+<!-- # Datenbankverbindung beenden -->
+```{r include=FALSE}
 dbDisconnect(con)
 ```

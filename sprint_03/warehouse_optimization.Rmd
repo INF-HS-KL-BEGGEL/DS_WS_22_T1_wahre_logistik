@@ -1,0 +1,360 @@
+---
+title: "Optimierung der Zonen innerhalb des Lagers"
+author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
+output:
+  html_notebook:
+    toc: true
+    toc_float: true
+    code_folding: none
+    number_sections: true
+---
+
+
+```{r include=FALSE}
+library(DBI)
+library(odbc)
+library(leaflet)
+library(plyr)
+library(dplyr)
+library(glue)
+library(rlang)
+library(ggplot2)
+library(plotly)
+library(tidyverse)
+
+library(factoextra)
+library(RColorBrewer)
+
+library(arules) #Provides the infrastructure for representing, manipulating and analyzing transaction data and patterns (frequent itemsets and association rules).
+
+library(arulesViz) #Extends package 'arules' with various visualization techniques for association rules and item-sets. The package also includes several interactive visualizations for rule exploration.
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+```{r include=FALSE}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+```{r include=FALSE}
+verkaeufe <- dbGetQuery(conn=con, statement = "select * from verkaeufe")
+```
+
+```{r include=FALSE}
+# Funktion zum Durchführen von ABC-Analysen
+# 1. Sortiere die Datensätze absteigend nach dem gewählten Merkmal (column)
+# 2. Berechne den prozentualen Anteil
+# 3. Kumuliere die prozentualen Anteile
+# 4. Ordne die Datensätze gemäß der gewählten Grenzen (thresholds) den Klassen zu (A, B, ...)
+
+abc_analyse <- function(.data, column, classnames, thresholds){
+  #classes <- LETTERS[1:(length(thresholds)+1)]
+  classes <- classnames
+  
+  class_mappings <- c(glue('anteil_kumuliert <= {thresholds[1]} ~ "{classes[1]}"'))
+  for(i in 2:length(thresholds)){
+    class_mappings <- c(class_mappings, glue('anteil_kumuliert > {thresholds[i-1]} & anteil_kumuliert <= {thresholds[i]} ~ "{classes[i]}"'))
+  }
+  class_mappings <- c(class_mappings, glue('TRUE ~ "{classes[length(classes)]}"'))
+  class_mappings <- parse_exprs(class_mappings)
+  
+  .data %>% 
+    arrange(desc(!!ensym(column))) %>% 
+    mutate(rang = row_number()) %>% 
+    mutate(anteil = !!ensym(column)/sum(!!ensym(column))) %>% 
+    mutate(anteil_kumuliert = cumsum(anteil)) %>%
+    mutate(klasse = case_when(!!!class_mappings)) %>% 
+    mutate(klasse = as.factor(klasse)) %>%
+    return()
+}
+```
+
+
+# Klassenkombinationen nach ABC-Analyse
+Mit folgenden Grenzen:
+
+* A:(9, inf)
+* B:[2,9]
+* C:[0,2)
+
+```{r include=FALSE}
+#Ein Zugriff bedeutet, dass wegen einem Artikel ins Lager gegangen werden muss. Hierbei ist es unerheblich, wie viele Verpackungseinheiten aus dem Lager geholt werden.
+
+# A: (9, inf)
+# B: [2,9]
+# C: [0,2)
+#Führe eine ABC-Analyse der Artikel nach den Zugriffen durch
+classnames <- c("A","B","C")
+thresholds <- c(0.79913, 0.959775)
+
+abc_analyse_nach_zugriffen <- verkaeufe %>%
+  group_by(materialnummer) %>%
+  summarise(anzahl_zugriffe = n()) %>%
+  abc_analyse(anzahl_zugriffe, thresholds = thresholds, classnames=classnames) %>% 
+  rename(anteil_zugriffe = anteil, anteil_zugriffe_kumuliert = anteil_kumuliert)
+```
+
+## Tabelle aller Klassenkombinationen
+```{r include=FALSE}
+abc_analyse_nach_zugriffen
+```
+```{r include=FALSE}
+classes_mat <- abc_analyse_nach_zugriffen %>% select(materialnummer, klasse, anzahl_zugriffe, rang) %>% rename(klasse_zugriffe=klasse, rang_zugriffe=rang)
+
+classes_mat
+```
+
+```{r include=FALSE}
+vk_zg_class <- verkaeufe %>% dplyr::inner_join(classes_mat)
+
+vk_zg_class
+```
+```{r include=FALSE}
+ls_class_comb <- vk_zg_class %>% group_by(lieferschein) %>% arrange(klasse_zugriffe) %>% dplyr::summarize(komb_klasse_zugriffe=paste0(unique(klasse_zugriffe), collapse = ","))
+
+ls_class_comb
+```
+
+```{r, echo=FALSE}
+class_ls_count <- ls_class_comb %>% dplyr::group_by(komb_klasse_zugriffe) %>% dplyr::summarize(anzahl_ls_mit_komb=n())
+
+summe_ls <- sum(class_ls_count$anzahl_ls_mit_komb)
+
+print(paste("Summe Lieferscheine:", summe_ls))
+```
+
+
+
+```{r, echo=FALSE}
+class_ls_count <- class_ls_count %>% mutate(prozent_ls_mit_komb=anzahl_ls_mit_komb/summe_ls)
+
+class_ls_count
+```
+```{r include=FALSE}
+fig <- plot_ly(class_ls_count, labels = ~komb_klasse_zugriffe, values = ~prozent_ls_mit_komb, type = 'pie', sort = TRUE)
+fig <- fig %>% layout(title = 'Verteilung Lieferscheinkombinationen von Zugriffen',
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+```
+
+
+## Pie Chart der Klassenkombinationen
+
+Die Lieferscheine mit Kombinationen **A,C**, **B,C** und **A,B,C** ergeben zusammen nur ca. 5,4% (entspricht 7069 Lieferscheine).
+
+```{r, echo=FALSE}
+fig
+```
+
+```{r , include=FALSE}
+class_ls_count %>% filter(prozent_ls_mit_komb < 0.025) %>% select(anzahl_ls_mit_komb, prozent_ls_mit_komb) %>%   summarise_all(sum) %>% mutate(komb_klasse_zugriffe = 'A,C v B,C v A,B,C') %>% select(komb_klasse_zugriffe, anzahl_ls_mit_komb, prozent_ls_mit_komb)
+```
+# Verfeinerung mit Apriori
+## Regeln für A
+```{r, include=FALSE}
+ls_class_comb_A <- ls_class_comb %>% filter(komb_klasse_zugriffe == 'A')
+
+A_ls <- verkaeufe %>% select(lieferschein, materialnummer) %>% inner_join(ls_class_comb_A)
+
+A_ls
+```
+
+```{r, include=FALSE}
+#cast into a glimpse object
+gTemp <- glimpse(A_ls%>% select(lieferschein,materialnummer))
+
+#cast glimpse into a transcation object, requested by API
+transactionData <- ddply(gTemp,c("lieferschein"),
+                       function(df1)paste(df1$materialnummer,
+                       collapse = ","))
+
+#rename column and remove unused columns
+names(transactionData)[names(transactionData) == "V1"] <- "items"
+transactionData <- transactionData %>% select(items) #called basket layout
+
+gTemp
+transactionData
+```
+
+
+```{r, include=FALSE}
+#export the transaction object as CSV file and re-import it using special import constructor
+write.csv(transactionData,"./market_basket_A_transactions.csv", quote = FALSE, row.names = FALSE)
+
+tr <- read.transactions("./market_basket_A_transactions.csv", format = 'basket', sep=',')
+summary(tr)
+```
+
+```{r, include=FALSE}
+# search for rules beyond the items using Apriori algorithm
+#rules <- apriori(tr, parameter = list(supp=0.001, conf=0.5,maxlen=2770))
+rules <- apriori(tr, parameter = list(supp=0.001, conf=0.80, maxlen=2))
+rulesDF <- as(rules,"data.frame") %>% arrange(desc(confidence))
+summary(rules)
+```
+
+### Tabelle
+```{r, echo=FALSE}
+rulesDF %>% filter(lift>100) %>% arrange(desc(lift))
+```
+
+
+### Scatterplot Regeln
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Filter rules with confidence greater than 0.4 or 40%
+#subRules<-rules[quality(rules)$confidence>0.4]
+subRules<-rules[quality(rules)$lift>100]
+#Plot SubRules
+plot(subRules)
+#inspect(subRules)
+```
+### Regelgraph
+```{r, echo=FALSE}
+plot(subRules, method = "graph",  engine = "htmlwidget")
+```
+
+
+
+## Regeln für A,B
+```{r, include=FALSE}
+ls_class_comb_A_B <- ls_class_comb %>% filter(komb_klasse_zugriffe == 'A,B')
+
+A_B_ls <- verkaeufe %>% select(lieferschein, materialnummer) %>% inner_join(ls_class_comb_A_B)
+
+A_B_ls
+```
+
+
+```{r include=FALSE}
+#cast into a glimpse object
+gTemp <- glimpse(A_B_ls%>% select(lieferschein,materialnummer))
+
+#cast glimpse into a transcation object, requested by API
+transactionData <- ddply(gTemp,c("lieferschein"),
+                       function(df1)paste(df1$materialnummer,
+                       collapse = ","))
+
+#rename column and remove unused columns
+names(transactionData)[names(transactionData) == "V1"] <- "items"
+transactionData <- transactionData %>% select(items) #called basket layout
+
+gTemp
+transactionData
+```
+
+
+```{r, include=FALSE}
+#export the transaction object as CSV file and re-import it using special import constructor
+write.csv(transactionData,"./market_basket_A_B_transactions.csv", quote = FALSE, row.names = FALSE)
+
+tr <- read.transactions("./market_basket_A_B_transactions.csv", format = 'basket', sep=',')
+summary(tr)
+```
+
+```{r, include=FALSE}
+# search for rules beyond the items using Apriori algorithm
+#rules <- apriori(tr, parameter = list(supp=0.001, conf=0.5,maxlen=2770))
+rules <- apriori(tr, parameter = list(supp=0.001, conf=0.80, maxlen=2))
+rulesDF <- as(rules,"data.frame") %>% arrange(desc(confidence))
+summary(rules)
+```
+
+### Tabelle
+```{r, echo=FALSE}
+rulesDF %>% filter(lift>100) %>% arrange(desc(lift))
+```
+
+### Scatterplot Regeln
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Filter rules with confidence greater than 0.4 or 40%
+#subRules<-rules[quality(rules)$confidence>0.4]
+subRules<-rules[quality(rules)$lift>100]
+#Plot SubRules
+plot(subRules)
+#inspect(subRules)
+```
+### Regelgraph
+```{r, echo=FALSE}
+plot(subRules, method = "graph",  engine = "htmlwidget")
+```
+
+
+## Regeln für B
+```{r, include=FALSE}
+ls_class_comb_B <- ls_class_comb %>% filter(komb_klasse_zugriffe == 'B')
+
+B_ls <- verkaeufe %>% select(lieferschein, materialnummer) %>% inner_join(ls_class_comb_B)
+
+B_ls
+```
+
+
+```{r include=FALSE}
+#cast into a glimpse object
+gTemp <- glimpse(B_ls%>% select(lieferschein,materialnummer))
+
+#cast glimpse into a transcation object, requested by API
+transactionData <- ddply(gTemp,c("lieferschein"),
+                       function(df1)paste(df1$materialnummer,
+                       collapse = ","))
+
+#rename column and remove unused columns
+names(transactionData)[names(transactionData) == "V1"] <- "items"
+transactionData <- transactionData %>% select(items) #called basket layout
+
+gTemp
+transactionData
+```
+
+
+```{r, include=FALSE}
+#export the transaction object as CSV file and re-import it using special import constructor
+write.csv(transactionData,"./market_basket_B_transactions.csv", quote = FALSE, row.names = FALSE)
+
+tr <- read.transactions("./market_basket_B_transactions.csv", format = 'basket', sep=',')
+summary(tr)
+```
+
+```{r, include=FALSE}
+# search for rules beyond the items using Apriori algorithm
+#rules <- apriori(tr, parameter = list(supp=0.001, conf=0.5,maxlen=2770))
+rules <- apriori(tr, parameter = list(supp=0.0002, conf=0.80, maxlen=2))
+rulesDF <- as(rules,"data.frame") %>% arrange(desc(confidence))
+summary(rules)
+```
+### Tabelle
+```{r, echo=FALSE}
+rulesDF %>% filter(lift>100) %>% arrange(desc(lift))
+#rulesDF %>% filter(lift>100) %>% arrange(desc(lift))
+```
+
+
+### Scatterplot Regeln
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=8) 
+# Filter rules with confidence greater than 0.4 or 40%
+#subRules<-rules[quality(rules)$confidence>0.4]
+subRules<-rules[quality(rules)$lift>100]
+#Plot SubRules
+plot(subRules)
+#inspect(subRules)
+```
+### Regelgraph
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot(subRules, method = "graph",  engine = "htmlwidget")
+```
+
+```{r include=FALSE}
+dbDisconnect(con)
+```
+
+

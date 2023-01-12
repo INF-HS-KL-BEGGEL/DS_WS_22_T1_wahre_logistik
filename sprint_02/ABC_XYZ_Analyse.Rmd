@@ -24,6 +24,15 @@ readRenviron("../env_files/.Renviron.postgres")
 ```
 
 ```{r include=FALSE}
+con <- dbConnect(drv=RPostgres::Postgres(),
+                 dbname=Sys.getenv("dbname"),
+                 host=Sys.getenv("host"),
+                 port=Sys.getenv("port"),
+                 password=Sys.getenv("password"),
+                 user=Sys.getenv("user"))
+```
+
+```{r include=FALSE}
 con <- DBI::dbConnect(odbc::odbc(),
                       Driver   = Sys.getenv("driver"),
                       Server   = Sys.getenv("host"),
@@ -45,9 +54,20 @@ get_table_as_tibble <- function(connection, table_name){
 verkaeufe <- get_table_as_tibble(con, "verkaeufe")
 ```
 
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+
+
 # ABC-Analyse
 
 ```{r include=FALSE}
+# Funktion zum Durchführen von ABC-Analysen
+# 1. Sortiere die Datensätze absteigend nach dem gewählten Merkmal (column)
+# 2. Berechne den prozentualen Anteil
+# 3. Kumuliere die prozentualen Anteile
+# 4. Ordne die Datensätze gemäß der gewählten Grenzen (thresholds) den Klassen zu (A, B, ...)
+
 abc_analyse <- function(.data, column, thresholds){
   classes <- LETTERS[1:(length(thresholds)+1)]
   
@@ -73,63 +93,68 @@ abc_analyse <- function(.data, column, thresholds){
 ```{r include=FALSE}
 #Ein Zugriff bedeutet, dass wegen einem Artikel ins Lager gegangen werden muss. Hierbei ist es unerheblich, wie viele Verpackungseinheiten aus dem Lager geholt werden.
 
+
+#Führe eine ABC-Analyse der Artikel nach den Zugriffen durch
+thresholds <- c(0.79913, 0.959775) # Martins geheime Grenzen
+# thresholds <- c(0.8, 0.96)
+# thresholds <- c(0.075, 0.15, 0.3, 0.45, 0.65, 0.75, 0.9, 0.96)
+
 abc_analyse_nach_zugriffen <- verkaeufe %>%
   group_by(materialnummer) %>%
   summarise(anzahl_zugriffe = n()) %>%
-  # abc_analyse(anzahl_zugriffe, thresholds = c(0.075, 0.15, 0.3, 0.45, 0.65, 0.75, 0.9, 0.96)) %>%
-  # abc_analyse(anzahl_zugriffe, thresholds = c(0.1, 0.8, 0.9)) %>% 
-  abc_analyse(anzahl_zugriffe, thresholds = c(0.79913, 0.959775)) %>% # Martins geheime Grenzen
+  # abc_analyse(anzahl_zugriffe, thresholds = thresholds) %>%
+  abc_analyse(anzahl_zugriffe, thresholds = thresholds) %>% # Martins geheime Grenzen
   rename(anteil_zugriffe = anteil, anteil_zugriffe_kumuliert = anteil_kumuliert)
 ```
 
+```{r echo=FALSE}
+tibble(Klasse = LETTERS[0:length(thresholds)], Grenzen = glue("{round(thresholds*100, digits=0)} %"))
+```
+
+
 ```{r include=FALSE}
-# abc_analyse_nach_zugriffen %>%
-#   group_by(klasse) %>%
-#   summarise(anzahl = n()) %>% 
-#   summarise(sum(anzahl))
-
-
-
-# nrow(abc_analyse_nach_zugriffen)
+material_zugriffe_je_klasse <- abc_analyse_nach_zugriffen %>% 
+  group_by(klasse) %>% 
+  summarise(zugriffe_in_klasse = sum(anzahl_zugriffe)) %>% 
+  mutate(zugriffe_in_klasse_formatiert = format(round(zugriffe_in_klasse), big.mark=".", decimal.mark=","))
 ```
 
+
 ```{r echo=FALSE}
-anzahl_artikel <- nrow(abc_analyse_nach_zugriffen)
-
-
-abc_analyse_nach_zugriffen %>%
-  group_by(klasse) %>%
-  summarise(anzahl = n()) %>%
+# Erstelle den Standard-(Lehrbuch)-Graph von der ABC-Analyse
+# Dabei betrachten wir, welcher Anteil der Datensätze, zusammen welchen Anteil am betrachteten Merkmal hat.
+ abc_analyse_nach_zugriffen %>%
+  mutate(anteil_artikel = row_number()/n()) %>% 
   ggplot() +
-  geom_col(mapping = aes(x=klasse, y=anzahl)) +
-  geom_text(mapping = aes(x=klasse, y=anzahl, label=glue("{anzahl} Stück")), vjust=1.5, color="white") +
-  geom_text(mapping = aes(x=klasse, y=anzahl, label="bzw."), vjust=3.5, color="white") +
-  geom_text(mapping = aes(x=klasse, y=anzahl, label=glue("{round((anzahl/anzahl_artikel)*100, digits = 0)} %")), vjust=5.5, color="white") +
+  geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_zugriffe_kumuliert*100, color=klasse)) +
+  geom_hline(yintercept = 0, linewidth=0.8) +
+  geom_vline(xintercept = 0, linewidth=0.8) +
+  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  coord_fixed(ratio = 1) +
   labs(
-    title = "ABC-Analyse der Artikel nach Zugriffen",
-    x = "Klasse",
-    y = "Anzahl Artikel"
+    x = "Anteil Artikel (in %)",
+    y = "Anteil Zugriffe kumuliert (in %)",
+    color = "Klasse",
+    title = "ABC-Analyse der Artikel nach Zugriffen"
   )
-
-
-
-# abc_analyse_nach_zugriffen %>%
-#   ggplot() + 
-#   geom_bar(mapping = aes(x=klasse))
 ```
 
 
-
 ```{r echo=FALSE}
+# Erstelle ein Facet-Grid. Dadurch betrachten wir für jede Klasse einen eigenen Plot und können somit die Homogenität der Klassen überprüfen.
 abc_analyse_nach_zugriffen %>%
   group_by(klasse) %>% 
   mutate(anteil_artikel_in_klasse = row_number()/n(), anteil_zugriffe_kumuliert_in_klasse = cumsum(anteil_zugriffe)/sum(anteil_zugriffe)) %>% 
-  # filter(klasse == "A") %>% 
   ggplot() +
-  geom_line(mapping = aes(x = anteil_artikel_in_klasse, anteil_zugriffe_kumuliert_in_klasse), color="blue") +
-  geom_hline(yintercept = 0, size=0.8) +
-  geom_vline(xintercept = 0, size=0.8) +
+  geom_line(mapping = aes(x = anteil_artikel_in_klasse*100, anteil_zugriffe_kumuliert_in_klasse*100), color="blue") +
+  geom_hline(yintercept = 0, linewidth=0.8) +
+  geom_vline(xintercept = 0, linewidth=0.8) +
   facet_wrap(~klasse) +
+  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  coord_fixed(ratio = 1) +
+  geom_label(data=material_zugriffe_je_klasse, mapping = aes(x=50, y=15, label=glue("{zugriffe_in_klasse_formatiert} Zugriffe")), hjust="middle", vjust="middle", color="black", fill="white") +
   labs(
     x = "Anteil Artikel (in der jew. Klasse)",
     y = "Anteil an den Zugriffen (in der jew. Klasse)"
@@ -138,42 +163,65 @@ abc_analyse_nach_zugriffen %>%
 
 
 ```{r echo=FALSE}
- abc_analyse_nach_zugriffen %>%
-  mutate(anteil_artikel = row_number()/n()) %>% 
+# Erstelle eine Bar-Chart, die veranschaulichen soll, wie viele Artikel in welcher Klasse enthalten sind.
+
+anzahl_artikel <- nrow(abc_analyse_nach_zugriffen)
+
+abc_analyse_nach_zugriffen %>%
+  group_by(klasse) %>%
+  summarise(anzahl = n()) %>% 
+  mutate(anteil = round(anzahl/sum(anzahl)*100, digits=0)) %>% 
   ggplot() +
-  geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_zugriffe_kumuliert*100, color=klasse)) +
-  geom_hline(yintercept = 0, size=0.8) +
-  geom_vline(xintercept = 0, size=0.8) +
-  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
-  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
-  coord_fixed(ratio = 1) +
+  geom_col(mapping = aes(x=klasse, y=anzahl)) +
+  geom_text(mapping = aes(x=klasse, y=anzahl, label=glue("{anzahl} Stück")), vjust=1.5, color="white") +
+  geom_text(mapping = aes(x=klasse, y=anzahl, label="bzw."), vjust=3.5, color="white") +
+  geom_text(mapping = aes(x=klasse, y=anzahl, label=glue("{anteil} %")), vjust=5.5, color="white") +
   labs(
-    x = "Anteil Artikel (in %)",
-    y = "Anteil Zugriffe kumuliert (in %)",
-    color = "Klasse",
-    title = "ABC-Analyse nach Zugriffen"
+    title = "ABC-Analyse der Artikel nach Zugriffen",
+    x = "Klasse",
+    y = "Anzahl Artikel"
   )
 ```
 
 
 
+
+
 ## Material nach Umsatz (ABC-Material)
 ```{r include=FALSE}
-abc_analyse_nach_umsatz <- verkaeufe %>% 
+# Führe eine ABC-Analyse der Artikel nach dem Umsatz durch.
+thresholds <- c(0.4, 0.8, 0.96, 0.99)
+
+abc_analyse_material_nach_umsatz <- verkaeufe %>% 
   group_by(materialnummer) %>% 
   summarise(umsatz = sum(vk_preis_num)) %>% 
-  abc_analyse(column = umsatz, thresholds = c(0.4, 0.8, 0.96, 0.99)) %>% 
+  abc_analyse(column = umsatz, thresholds = thresholds) %>% 
   rename(anteil_umsatz = anteil, anteil_umsatz_kumuliert = anteil_kumuliert)
 ```
 
 
 ```{r echo=FALSE}
-abc_analyse_nach_umsatz %>% 
+tibble(Klasse = LETTERS[0:length(thresholds)], Grenzen = glue("{round(thresholds*100, digits=0)} %"))
+```
+
+
+```{r include=FALSE}
+material_umsatz_je_klasse <- abc_analyse_material_nach_umsatz %>% 
+  group_by(klasse) %>% 
+  summarise(umsatz_in_klasse = sum(umsatz)) %>% 
+  mutate(umsatz_in_klasse_formatiert = format(round(umsatz_in_klasse), big.mark=".", decimal.mark=","))
+```
+
+
+```{r echo=FALSE}
+# Erstelle den Standard-(Lehrbuch)-Graph von der ABC-Analyse
+# Dabei betrachten wir, welcher Anteil der Datensätze, zusammen welchen Anteil am betrachteten Merkmal hat.
+abc_analyse_material_nach_umsatz %>% 
   mutate(anteil_artikel = row_number()/n()) %>% 
   ggplot() +
   geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_umsatz_kumuliert*100, color=klasse)) +
-  geom_hline(yintercept = 0, size=0.8) + 
-  geom_vline(xintercept = 0, size=0.8) +
+  geom_hline(yintercept = 0, linewidth=0.8) + 
+  geom_vline(xintercept = 0, linewidth=0.8) +
   scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
   scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
   coord_fixed(ratio = 1) +
@@ -181,129 +229,105 @@ abc_analyse_nach_umsatz %>%
     x = "Anteil Artikel (in %)", 
     y = "Anteil Umsatz kumuliert (in %)",
     color = "Klasse",
-    title = "ABC-Analyse nach Umsatz"
+    title = "ABC-Analyse der Artikel nach Umsatz"
   )
 ```
 
 ```{r echo=FALSE}
-abc_analyse_nach_umsatz %>% 
+# Erstelle ein Facet-Grid. Dadurch betrachten wir für jede Klasse einen eigenen Plot und können somit die Homogenität der Klassen überprüfen.
+abc_analyse_material_nach_umsatz %>% 
   group_by(klasse) %>% 
   mutate(anteil_artikel_in_klasse = row_number()/n(), anteil_umsatz_kumuliert_in_klasse = cumsum(anteil_umsatz)/sum(anteil_umsatz)) %>% 
   ggplot() +
-  geom_line(mapping = aes(x = anteil_artikel_in_klasse, anteil_umsatz_kumuliert_in_klasse), color="blue") +
-  geom_hline(yintercept = 0, size=0.8) +
-  geom_vline(xintercept = 0, size=0.8) +
+  geom_line(mapping = aes(x = anteil_artikel_in_klasse*100, anteil_umsatz_kumuliert_in_klasse*100), color="blue") +
+  geom_hline(yintercept = 0, linewidth=0.8) +
+  geom_vline(xintercept = 0, linewidth=0.8) +
+  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
   facet_wrap(~klasse) +
+  geom_label(data=material_umsatz_je_klasse, mapping = aes(x=50, y=15, label=glue("{umsatz_in_klasse_formatiert} €")), hjust="middle", vjust="middle", color="black", fill="white") +
+  coord_fixed(ratio=1) +
   labs(
-    x = "Anteil Artikel (in der jew. Klasse)",
-    y = "Anteil am Umsatz (in der jew. Klasse)"
+    x = "Anteil Artikel in der jew. Klasse (in %)",
+    y = "Anteil am Umsatz in der jew. Klasse (in %)"
   )
 ```
 
-
-
-
-```{r include=FALSE}
-# x_B <- abc_analyse_nach_umsatz %>% 
-#   filter(klasse == "B") %>% 
-#   arrange(rang) %>%
-#   head(1) %>% 
-#   pull("anteil_artikel")
-# 
-# x_C <- abc_analyse_nach_umsatz %>% 
-#   filter(klasse == "C") %>% 
-#   arrange(rang) %>%
-#   head(1) %>% 
-#   pull("anteil_artikel")
-#    
-# abc_analyse_nach_umsatz %>% 
-#   ggplot() +
-#   geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_umsatz_kumuliert*100, color=klasse)) +
-#   geom_hline(yintercept = 0, size=0.8) + 
-#   geom_vline(xintercept = 0, size=0.8) +
-#   geom_vline(xintercept = c(x_B, x_C)*100, linetype="dashed") +
-#   # geom_area(aes(y=anteil_umsatz_kumuliert)) +
-#   scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits = 1)) +
-#   scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
-#   # scale_fill_brewer(palette="Dark2") +
-#   coord_fixed(ratio = 1) +
-#   labs(
-#     x = "Anteil Artikel (in %)", 
-#     y = "Anteil Umsatz kumuliert (in %)",
-#     color = "Klasse",
-#     title = "ABC-Analyse nach Umsatz"
-#   )
-```
-
-
-
-## Material nach Summe von Abgang
-```{r include=FALSE}
-abc_analyse_nach_abgang <- verkaeufe %>% 
-  select(materialnummer, abgang) %>% 
-  group_by(materialnummer) %>% 
-  summarise(count_abgang=sum(abgang)) %>% 
-  abc_analyse(column = count_abgang, thresholds = c(0.8, 0.9))
-```
-
-```{r include=FALSE}
-abc_analyse_nach_abgang <- abc_analyse_nach_abgang %>% 
-  rename(anteil_abgang = anteil, anteil_abgang_kumuliert = anteil_kumuliert) %>% 
-  mutate(anteil_artikel=row_number()/n())
-```
-
 ```{r echo=FALSE}
-x_B <- abc_analyse_nach_abgang %>% 
-  filter(klasse == "B") %>% 
-  arrange(rang) %>%
-  head(1) %>% 
-  pull("anteil_artikel")
-
-x_C <- abc_analyse_nach_abgang %>% 
-  filter(klasse == "C") %>% 
-  arrange(rang) %>%
-  head(1) %>% 
-  pull("anteil_artikel")
-
-
-
-abc_analyse_nach_abgang %>% 
+# Erstelle eine Bar-Chart, die veranschaulichen soll, wie viele Artikel in welcher Klasse enthalten sind.
+abc_analyse_material_nach_umsatz %>% 
+  group_by(klasse) %>% 
+  summarise(anzahl = n()) %>%
+  mutate(anteil = round(anzahl/sum(anzahl)*100, digits=1)) %>% 
   ggplot() +
-  geom_line(mapping = aes(x=anteil_artikel*100, y=anteil_abgang_kumuliert*100, color=klasse)) +
-  geom_hline(yintercept = 0, size=0.8) + 
-  geom_vline(xintercept = 0, size=0.8) +
-  geom_vline(xintercept = c(x_B, x_C)*100, linetype="dashed") +
-  scale_x_continuous(breaks = round(c(0, x_B, x_C, 1)*100, digits = 0)) +
-  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
-  coord_fixed(ratio = 0.5) +
+  geom_col(mapping = aes(x=klasse, y=anzahl)) +
+  geom_text(mapping = aes(x=klasse, y=anzahl, label=anzahl), vjust=-0.5, color="black") +
+  geom_text(mapping = aes(x=klasse, y=anzahl, label=glue("{anteil} %")), vjust=1.5, color="3FF") +
   labs(
-    x = "Anteil Artikel (in %)", 
-    y = "Anteil Abgänge kumuliert (in %)",
-    color = "Klasse",
-    title = "ABC-Analyse nach Abgängen"
+    x = "Klasse",
+    y = "Anzahl Artikel"
   )
 ```
 
 ## Kunden nach Umsatz
 ```{r include=FALSE}
+# Führe eine ABC-Analyse der Kunden nach dem Umsatz durch
+thresholds <- c(0.4, 0.8, 0.96, 0.99)
+
 abc_analyse_kunde_nach_umsatz <- verkaeufe %>% 
   group_by(kunde) %>% 
   summarise(umsatz = sum(vk_preis_num)) %>% 
-  abc_analyse(column = umsatz, thresholds = c(0.4, 0.8, 0.96, 0.99)) %>% 
+  abc_analyse(column = umsatz, thresholds = thresholds) %>% 
   rename(anteil_umsatz = anteil, anteil_umsatz_kumuliert = anteil_kumuliert)
 ```
 
+
 ```{r echo=FALSE}
+tibble(Klasse = LETTERS[0:length(thresholds)], Grenzen = glue("{round(thresholds*100, digits=0)} %"))
+```
+
+
+```{r include=FALSE}
+kunden_umsatz_je_klasse <- abc_analyse_kunde_nach_umsatz %>% 
+  group_by(klasse) %>% 
+  summarise(umsatz_in_klasse = sum(umsatz)) %>% 
+  mutate(umsatz_in_klasse_formatiert = format(round(umsatz_in_klasse), big.mark=".", decimal.mark=","))
+```
+
+
+```{r echo=FALSE}
+# Erstelle den Standard-(Lehrbuch)-Graph von der ABC-Analyse
+# Dabei betrachten wir, welcher Anteil der Datensätze, zusammen welchen Anteil am betrachteten Merkmal hat.
+abc_analyse_kunde_nach_umsatz %>%
+  mutate(anteil_kunde_kumuliert = row_number()/n()) %>%
+  ggplot() +
+  geom_line(mapping = aes(x=anteil_kunde_kumuliert*100, y=anteil_umsatz_kumuliert*100, color=klasse)) +
+  geom_hline(yintercept = 0, linewidth=0.8) +
+  geom_vline(xintercept = 0, linewidth=0.8) +
+  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
+  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  coord_fixed(ratio=1) +
+  labs(
+    title = "ABC-Analyse der Kunden nach dem Umsatz",
+    x = "Anteil Kunde (in %)",
+    y = "Anteil Umsatz (in %)"
+  )
+```
+
+
+```{r echo=FALSE}
+# Erstelle ein Facet-Grid. Dadurch betrachten wir für jede Klasse einen eigenen Plot und können somit die Homogenität der Klassen überprüfen.
 abc_analyse_kunde_nach_umsatz %>% 
   group_by(klasse) %>% 
   mutate(anteil_kunde_kumuliert_in_klasse = row_number()/n(), anteil_umsatz_kumuliert_in_klasse = cumsum(anteil_umsatz)/sum(anteil_umsatz)) %>%
   ggplot() +
   geom_line(mapping = aes(x=anteil_kunde_kumuliert_in_klasse*100, y=anteil_umsatz_kumuliert_in_klasse*100), color="blue") +
   facet_wrap(~klasse) + 
-  geom_hline(yintercept = 0, size=0.8) +
-  geom_vline(xintercept = 0, size=0.8) +
+  geom_hline(yintercept = 0, linewidth=0.8) +
+  geom_vline(xintercept = 0, linewidth=0.8) +
   scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
   scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
+  geom_label(data=kunden_umsatz_je_klasse, mapping = aes(x=50, y=15, label=glue("{umsatz_in_klasse_formatiert} €")), hjust="middle", vjust="middle", color="black", fill="white") + 
   coord_fixed(ratio=1) +
   labs(
     x = "Anteil Kunde in der jew. Klasse (in %)",
@@ -313,32 +337,15 @@ abc_analyse_kunde_nach_umsatz %>%
 
 
 ```{r echo=FALSE}
-abc_analyse_kunde_nach_umsatz %>%
-  mutate(anteil_kunde_kumuliert = row_number()/n()) %>%
-  ggplot() +
-  geom_line(mapping = aes(x=anteil_kunde_kumuliert*100, y=anteil_umsatz_kumuliert*100, color=klasse)) +
-  geom_hline(yintercept = 0, size=0.8) +
-  geom_vline(xintercept = 0, size=0.8) +
-  scale_x_continuous(breaks = seq(from=0, to=100, by=20)) +
-  scale_y_continuous(breaks = seq(from=0, to=100, by=20)) +
-  # coord_cartesian() +
-  coord_fixed(ratio=1) +
-  labs(
-    title = "ABC-Analyse der Kunden nach dem Umsatz",
-    x = "Anteil Kunde (in %)",
-    y = "Anteil Umsatz (in %)"
-  )
-```
-
-```{r}
+# Erstelle eine Bar-Chart, die veranschaulichen soll, wie viele Artikel in welcher Klasse enthalten sind.
 abc_analyse_kunde_nach_umsatz %>% 
   group_by(klasse) %>% 
   summarise(anzahl = n()) %>% 
+  mutate(anteil = round(anzahl/sum(anzahl) * 100, digits = 1)) %>% 
   ggplot() +
   geom_col(mapping = aes(x=klasse, y=anzahl)) +
   geom_text(mapping = aes(x=klasse, y=anzahl, label=anzahl), vjust=-0.5, color="black") +
-  # geom_text(mapping = aes(x=klasse, y=anzahl, label="bzw."), vjust=3.5, color="white") +
-  geom_text(mapping = aes(x=klasse, y=anzahl, label=glue("{round(anzahl/sum(anzahl)*100, digits = 1)} %")), vjust=1.5, color="3FF") +
+  geom_text(mapping = aes(x=klasse, y=anzahl, label=glue("{anteil} %")), vjust=1.5, color="3FF") +
   labs(
     x = "Klasse",
     y = "Anzahl Kunden"
@@ -347,8 +354,10 @@ abc_analyse_kunde_nach_umsatz %>%
 
 
 
+
+
 # XYZ-Analyse
-##Formeln:
+## Formeln:
 Erwartungswert=Mittelwert von Abgang
 Varianz = Summe von ((Abgang(Artikel) - Erwartungswert(Artikel)) zum Quadrat) /  Größe der Menge
 [https://axel-schroeder.de/varianz-standardabweichung-und-co-statistische-grundlagen-fuer-kleine-unternehmen/]
@@ -443,7 +452,7 @@ nachMaterialnummernProMonat
 ```
 
 
-### Erwartungswert
+
 ```{r include=FALSE}
 #ermittle den Erwartungswert
 wochen<-nrow(weekTable)
@@ -461,7 +470,7 @@ ErwartungswertNachMonaten
 ```
 
 
-### Varianz
+
 
 ```{r include=FALSE}
 #dies stellt nur einen  Rechen Zwischenschritt dar für die Berechnung der Varianz
@@ -503,7 +512,7 @@ AbgangStandardabweichungNachMonaten
 ```
 
 
-### Variationskoeffizient
+
 
 ```{r include=FALSE}
 #AbgangVarianzkoeffizient
@@ -515,11 +524,11 @@ VariationskoeffizientNachMonaten <- mutate(AbgangStandardabweichungNachMonaten, 
 VariationskoeffizientNachMonaten
 ```
 
-### Artikelanteil, Klassifizierung, Zählung aller Bestellungen
+
 ```{r include=FALSE}
 #week
 #ergänzen des gesamten Abgangs und der menge an Bestellungen
-VariationskoeffizientNachWochen <- inner_join(x=VariationskoeffizientNachWochen,y=nachMaterialnummern,by="materialnummer")
+VariationskoeffizientNachWochen <- inner_join(x=VariationskoeffizientNachWochen,y=nachMaterialnummernProWoche,by="materialnummer")
 VariationskoeffizientNachWochen <- inner_join(x=VariationskoeffizientNachWochen,y=Bestellungen,by="materialnummer")
 #sortieren
 VariationskoeffizientNachWochen <- VariationskoeffizientNachWochen %>% arrange(Variationskoeffizient) 
@@ -540,7 +549,7 @@ VariationskoeffizientNachWochen <- VariationskoeffizientNachWochen %>% mutate(kl
                                                                         ))
 #month
 #ergänzen des gesamten Abgangs und der menge an Bestellungen
-VariationskoeffizientNachMonaten <- inner_join(x=VariationskoeffizientNachMonaten,y=nachMaterialnummern,by="materialnummer")
+VariationskoeffizientNachMonaten <- inner_join(x=VariationskoeffizientNachMonaten,y=nachMaterialnummernProMonat,by="materialnummer")
 VariationskoeffizientNachMonaten <- inner_join(x=VariationskoeffizientNachMonaten,y=Bestellungen,by="materialnummer")
 #sortieren
 VariationskoeffizientNachMonaten <- VariationskoeffizientNachMonaten %>% arrange(Variationskoeffizient) 
@@ -566,12 +575,10 @@ VariationskoeffizientNachMonaten
 ```
 
 
-### Plot
-
 ## Klasse-Z im Vergleich zu einmaligen Verkäufen
 ```{r echo=FALSE}
 # plot only last class together with lieferscheine==1
-subsetOfVariationskoeffizient <- select(VariationskoeffizientNachMonaten,Variationskoeffizient,anteil_artikel,klasse)
+subsetOfVariationskoeffizient <-select(VariationskoeffizientNachMonaten,Variationskoeffizient,anteil_artikel,klasse)
 subsetOfVariationskoeffizient <- subsetOfVariationskoeffizient %>% filter(klasse=="Z")
 minimumAnteil <- min(subsetOfVariationskoeffizient$anteil_artikel)
 subsetOfVariationskoeffizient %>% 
@@ -587,8 +594,8 @@ subsetOfVariationskoeffizient %>%
     color = "Klasse",
     title = "Betrachtung der Z-Klasse"
   )
-subsetOfVariationskoeffizient <- select(VariationskoeffizientNachMonaten,Variationskoeffizient,anteil_artikel,klasse,lieferscheine)
-subsetOfVariationskoeffizient <- subsetOfVariationskoeffizient[subsetOfVariationskoeffizient$lieferscheine == 1, ]
+subsetOfVariationskoeffizient <-select(VariationskoeffizientNachMonaten,Variationskoeffizient,anteil_artikel,klasse,lieferscheine.x)
+subsetOfVariationskoeffizient <- subsetOfVariationskoeffizient[subsetOfVariationskoeffizient$lieferscheine.x == 1, ]
 subsetOfVariationskoeffizient %>% 
   ggplot() +
   geom_line(mapping = aes(x=(anteil_artikel-minimumAnteil)*100, y=Variationskoeffizient, color=klasse),size=1) +
@@ -640,23 +647,21 @@ VariationskoeffizientNachMonaten %>%
   )
 ```
 
-
 # ABC-XYZ-Analyse
 Die Analyse fokussiert sich auf die Menge des Abgangs.
 ```{r include=FALSE}
 #merge abc and xyz
-matrixAnalyse <- inner_join(x=abc_analyse_nach_umsatz,y=Variationskoeffizient,by="materialnummer")
-matrixAnalyse <- matrixAnalyse %>% rename(abc_analyse=klasse.x, xyz_analyse=klasse.y)
-matrixAnalyse <- matrixAnalyse %>% select(materialnummer,abc_analyse,xyz_analyse)
-#calculate the amount of entrys per ABC and XYZ combination
-matrixAnalyse <- matrixAnalyse %>% group_by(abc_analyse,xyz_analyse) %>% summarize(Eintraege=n())
-matrixAnalyse <- matrixAnalyse %>% mutate(eintraege_verhaeltnis=Eintraege/(sum(matrixAnalyse$Eintraege)/100))
-```
+matrixAnalyse <- inner_join(x=abc_analyse_material_nach_umsatz,y=VariationskoeffizientNachWochen,by="materialnummer")
+matrixAnalyse
 
-```{r warining=FALSE}
+matrixAnalyse <- matrixAnalyse %>% select(klasse.x,klasse.y,materialnummer,umsatz)
+matrixAnalyse <- matrixAnalyse %>% rename(abc_analyse=klasse.x, xyz_analyse=klasse.y)
+matrixAnalyse <- matrixAnalyse %>% group_by(abc_analyse,xyz_analyse) %>% summarize(materialien=n(), umsatz=sum(umsatz))
+
+#This is hardcoded! Maybe make columns and row titles of the matrix later dynamic.
 #place the values in a matrix
-castedMatrixAnalyse <- matrix(matrixAnalyse$eintraege_verhaeltnis, nrow = 5, dimnames = list(c("V","W","X","Y","Z"), c("A","B","C")))
-castedMatrixAnalyse
+castedMatrixAnalyse <- matrix(glue('{as.character(matrixAnalyse$materialien)} Artikel
+{as.character(matrixAnalyse$umsatz)} €'), nrow = 4, dimnames = list(c("W","X","Y","Z"), c("A","B","C","D","E")))
 ```
 
 ```{r include=FALSE}
