@@ -1,5 +1,5 @@
 ---
-title: "Routing Performance"
+title: "Optimierung der Zonen innerhalb des Lagers"
 author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
 output:
   html_notebook:
@@ -14,12 +14,20 @@ output:
 library(DBI)
 library(odbc)
 library(leaflet)
+library(plyr)
 library(dplyr)
 library(glue)
 library(rlang)
 library(ggplot2)
 library(plotly)
 library(tidyverse)
+
+library(factoextra)
+library(RColorBrewer)
+
+library(arules) #Provides the infrastructure for representing, manipulating and analyzing transaction data and patterns (frequent itemsets and association rules).
+
+library(arulesViz) #Extends package 'arules' with various visualization techniques for association rules and item-sets. The package also includes several interactive visualizations for rule exploration.
 readRenviron("../env_files/.Renviron.postgres")
 ```
 
@@ -69,285 +77,280 @@ abc_analyse <- function(.data, column, classnames, thresholds){
 }
 ```
 
-# Nach Umsatz
-```{r include=FALSE}
-# Führe eine ABC-Analyse der Artikel nach dem Umsatz durch.
-classnames <- c("AA", "A", "B", "C", "Rest")
-thresholds <- c(0.4, 0.8, 0.96, 0.99)
 
-abc_analyse_material_nach_umsatz <- verkaeufe %>% 
-  group_by(materialnummer) %>% 
-  summarise(umsatz = sum(vk_preis_num)) %>% 
-  abc_analyse(column = umsatz, thresholds = thresholds, classnames=classnames) %>% 
-  rename(anteil_umsatz = anteil, anteil_umsatz_kumuliert = anteil_kumuliert)
-```
+# Klassenkombinationen nach ABC-Analyse
+Mit folgenden Grenzen:
 
-```{r}
-#abc_analyse_material_nach_umsatz
-```
+* A:(9, inf)
+* B:[2,9]
+* C:[0,2)
 
-```{r}
-material_umsatz_je_klasse <- abc_analyse_material_nach_umsatz %>% 
-  group_by(klasse) %>% 
-  summarise(umsatz_in_klasse = sum(umsatz), num=n()) %>% 
-  mutate(umsatz_in_klasse_formatiert = format(round(umsatz_in_klasse), big.mark=".", decimal.mark=","))
-
-material_umsatz_je_klasse
-```
-
-
-
-#Nach Zugriffen
 ```{r include=FALSE}
 #Ein Zugriff bedeutet, dass wegen einem Artikel ins Lager gegangen werden muss. Hierbei ist es unerheblich, wie viele Verpackungseinheiten aus dem Lager geholt werden.
 
-# l: (9, inf)
-# m: [2,9]
-# n: [0,2)
+# A: (9, inf)
+# B: [2,9]
+# C: [0,2)
 #Führe eine ABC-Analyse der Artikel nach den Zugriffen durch
-classnames <- c("l","m","n")
-thresholds <- c(0.79913, 0.959775) # Martins geheime Grenzen
-# thresholds <- c(0.8, 0.96)
-# thresholds <- c(0.075, 0.15, 0.3, 0.45, 0.65, 0.75, 0.9, 0.96)
+classnames <- c("A","B","C")
+thresholds <- c(0.79913, 0.959775)
 
 abc_analyse_nach_zugriffen <- verkaeufe %>%
   group_by(materialnummer) %>%
   summarise(anzahl_zugriffe = n()) %>%
-  # abc_analyse(anzahl_zugriffe, thresholds = thresholds) %>%
-  abc_analyse(anzahl_zugriffe, thresholds = thresholds, classnames=classnames) %>% # Martins geheime Grenzen
+  abc_analyse(anzahl_zugriffe, thresholds = thresholds, classnames=classnames) %>% 
   rename(anteil_zugriffe = anteil, anteil_zugriffe_kumuliert = anteil_kumuliert)
 ```
 
-```{r}
+## Tabelle aller Klassenkombinationen
+```{r include=FALSE}
 abc_analyse_nach_zugriffen
 ```
+```{r include=FALSE}
+classes_mat <- abc_analyse_nach_zugriffen %>% select(materialnummer, klasse, anzahl_zugriffe, rang) %>% rename(klasse_zugriffe=klasse, rang_zugriffe=rang)
 
-```{r}
-material_zugriffe_je_klasse <- abc_analyse_nach_zugriffen %>% 
-  group_by(klasse) %>% 
-  summarise(zugriffe_in_klasse = sum(anzahl_zugriffe), num=n()) %>% 
-  mutate(zugriffe_in_klasse_formatiert = format(round(zugriffe_in_klasse), big.mark=".", decimal.mark=","))
+classes_mat
 ```
 
-```{r}
-sum_zugriffe <- sum(material_zugriffe_je_klasse$zugriffe_in_klasse)
-material_zugriffe_je_klasse <- material_zugriffe_je_klasse %>% mutate(zugriffe_in_klasse_prozent=zugriffe_in_klasse/sum_zugriffe)
+```{r include=FALSE}
+vk_zg_class <- verkaeufe %>% dplyr::inner_join(classes_mat)
 
-material_zugriffe_je_klasse
+vk_zg_class
+```
+```{r include=FALSE}
+ls_class_comb <- vk_zg_class %>% group_by(lieferschein) %>% arrange(klasse_zugriffe) %>% dplyr::summarize(komb_klasse_zugriffe=paste0(unique(klasse_zugriffe), collapse = ","))
+
+ls_class_comb
 ```
 
-```{r}
-abc_analyse_nach_zugriffen
-```
+```{r, echo=FALSE}
+class_ls_count <- ls_class_comb %>% dplyr::group_by(komb_klasse_zugriffe) %>% dplyr::summarize(anzahl_ls_mit_komb=n())
 
-```{r}
-#ls_per_day <- vk %>% group_by(datum) %>% summarize(num_ls=n_distinct(lieferschein))
-#ls_per_day
-analyse_zugriffen_plot <- abc_analyse_nach_zugriffen %>% filter(anzahl_zugriffe > 1)
-analyse_zugriffen_plot
-#ggplot(analyse_zugriffen_plot, aes(x=rang, y=anzahl_zugriffe)) + geom_bar(stat = "identity")
-# fig <- plot_ly(
-#   data = analyse_zugriffen_plot,
-#   x = ~rang,
-#   y = ~anzahl_zugriffe,
-#   name = "X",
-#   type = "bar"
-# )
-# 
-# fig
+summe_ls <- sum(class_ls_count$anzahl_ls_mit_komb)
+
+print(paste("Summe Lieferscheine:", summe_ls))
 ```
 
 
-```{r}
 
-verkaeufe
+```{r, echo=FALSE}
+class_ls_count <- class_ls_count %>% mutate(prozent_ls_mit_komb=anzahl_ls_mit_komb/summe_ls)
 
+class_ls_count
 ```
-
-```{r}
-
-num_lieferscheine <- verkaeufe %>% distinct(lieferschein) %>% nrow()
-
-num_lieferscheine
-
-```
-
-```{r}
-
-ls_positionen <- verkaeufe %>% group_by(lieferschein) %>%  summarise(positionen= n())
-
-ls_positionen <- ls_positionen %>%  group_by(positionen) %>%  summarize(count=n(), prozent=count/num_lieferscheine)
-
-ls_positionen
-
-```
-
-```{r}
-
-#ggplot(ls_positionen %>% filter (positionen< 50), aes(x=positionen, y=count)) + geom_bar(stat = "identity")
-fig <- plot_ly(
-  data = ls_positionen %>% filter (positionen< 50),
-  x = ~positionen,
-  y = ~count,
-  name = "X",
-  type = "bar"
-)
-
-fig
-
-```
-
-```{r}
-
-# ls_positionen_classes <- ls_positionen %>% mutate(class = 
-#                                   case_when(
-#                                     positionen==1 ~ '1',
-#                                     positionen>=2 & positionen<=8 ~ '2-8',
-#                                     positionen>=9 & positionen<=30 ~ '9-30',
-#                                     positionen>30 ~ '31+',
-#                                     )
-#                                 )
-
-ls_positionen_classes <- ls_positionen %>% mutate(class = 
-                                  case_when(
-                                    positionen==1 ~ '1',
-                                    positionen==2 ~ '2',
-                                    positionen==3 ~ '3',
-                                    positionen==4 | positionen==5 ~ '4-5',
-                                    #positionen==5 ~ '5',
-                                    # positionen==6 ~ '6',
-                                    # positionen==7 ~ '7',
-                                    # positionen==8 ~ '8',
-                                    # positionen==9 ~ '9',
-                                    positionen>=6 & positionen<=9 ~ '6-9',
-                                    #positionen==11 ~ '11',
-                                    positionen>9 ~ '10+',
-                                    )
-                                )
-
-ls_positionen_classes
-
-```
-
-```{r}
-
-fig <- plot_ly(ls_positionen_classes, labels = ~class, values = ~prozent, type = 'pie', sort = FALSE)
-fig <- fig %>% layout(title = 'Verteilung Lieferscheine nach Positionen',
+```{r include=FALSE}
+fig <- plot_ly(class_ls_count, labels = ~komb_klasse_zugriffe, values = ~prozent_ls_mit_komb, type = 'pie', sort = TRUE)
+fig <- fig %>% layout(title = 'Verteilung Lieferscheinkombinationen von Zugriffen',
          xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
          yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
 
+```
+
+
+## Pie Chart der Klassenkombinationen
+
+Die Lieferscheine mit Kombinationen **A,C**, **B,C** und **A,B,C** ergeben zusammen nur ca. 5,4% (entspricht 7069 Lieferscheine).
+
+```{r, echo=FALSE}
 fig
+```
 
-# ls_positionen_by_class <- ls_positionen_classes %>% group_by(class) %>% summarize(count=n()) %>% mutate(prozent= count/num_lieferscheine)
-# 
-# ls_positionen_by_class
+```{r , include=FALSE}
+class_ls_count %>% filter(prozent_ls_mit_komb < 0.025) %>% select(anzahl_ls_mit_komb, prozent_ls_mit_komb) %>%   summarise_all(sum) %>% mutate(komb_klasse_zugriffe = 'A,C v B,C v A,B,C') %>% select(komb_klasse_zugriffe, anzahl_ls_mit_komb, prozent_ls_mit_komb)
+```
+# Verfeinerung mit Apriori
+## Regeln für A
+```{r, include=FALSE}
+ls_class_comb_A <- ls_class_comb %>% filter(komb_klasse_zugriffe == 'A')
 
-#ls_positionen_1 <- ls_positionen %>% filter(positionen == 1)
+A_ls <- verkaeufe %>% select(lieferschein, materialnummer) %>% inner_join(ls_class_comb_A)
 
-#ls_positionen_1 %>% nrow()
+A_ls
+```
 
+```{r, include=FALSE}
+#cast into a glimpse object
+gTemp <- glimpse(A_ls%>% select(lieferschein,materialnummer))
+
+#cast glimpse into a transcation object, requested by API
+transactionData <- ddply(gTemp,c("lieferschein"),
+                       function(df1)paste(df1$materialnummer,
+                       collapse = ","))
+
+#rename column and remove unused columns
+names(transactionData)[names(transactionData) == "V1"] <- "items"
+transactionData <- transactionData %>% select(items) #called basket layout
+
+gTemp
+transactionData
 ```
 
 
-```{r}
-# abc_analyse_material_nach_umsatz_join <- abc_analyse_material_nach_umsatz %>% select(materialnummer, klasse)
-# 
-# vk_class <- verkaeufe %>% inner_join(abc_analyse_material_nach_umsatz_join)
-# 
-# vk_class_mat <- vk_class %>% select(materialnummer, lieferschein, klasse) 
+```{r, include=FALSE}
+#export the transaction object as CSV file and re-import it using special import constructor
+write.csv(transactionData,"./market_basket_A_transactions.csv", quote = FALSE, row.names = FALSE)
 
-
-test <- function(x){
-  print(x)
-  return(x)
-}
-
-
-#verkaeufe %>% group_by(lieferschein) %>% filter(n() > 1)
-
-#TODO Doppelte Strigs rausfiltern (da bei einem Lieferschein materialien mehrfach vorkommen können)
-weird <- verkaeufe %>%  group_by(lieferschein) %>%  arrange(materialnummer) %>% summarize(length_comb = n_distinct(materialnummer), comb=paste0(unique(materialnummer), collapse = ","))  %>% arrange(desc(length_comb))
-
-weird
-
-#weird %>% filter(lieferschein == '107163630')
-
-weird %>% group_by(length_comb) %>% summarize(count=n())
-
-#verkaeufe %>% group_by(lieferschein) %>% mutate(testcol=test(materialnummer))
-
-
+tr <- read.transactions("./market_basket_A_transactions.csv", format = 'basket', sep=',')
+summary(tr)
 ```
 
-```{r}
-#weird %>% filter(grepl('4330816840948', comb, fixed=TRUE))
-weird %>% filter(comb == '4330816840948')
+```{r, include=FALSE}
+# search for rules beyond the items using Apriori algorithm
+#rules <- apriori(tr, parameter = list(supp=0.001, conf=0.5,maxlen=2770))
+rules <- apriori(tr, parameter = list(supp=0.001, conf=0.80, maxlen=2))
+rulesDF <- as(rules,"data.frame") %>% arrange(desc(confidence))
+summary(rules)
 ```
 
-```{r}
-weird %>% group_by(comb) %>% summarize(count = n()) %>% arrange(desc(count))
-```
-
-```{r}
-
-verkaeufe %>% group_by(lieferschein) %>%  filter(materialnummer == '4330816840948', n() == 1) 
-
+### Tabelle
+```{r, echo=FALSE}
+rulesDF %>% filter(lift>100) %>% arrange(desc(lift))
 ```
 
 
-```{r}
-#x <- verkaeufe %>% group_by(materialnummer, datum, lieferschein) %>% summarize(count=n()) %>% arrange(lieferschein)
-#verkaeufe
-
-#Zugriffe
-zugriffe <- verkaeufe %>% distinct(materialnummer, lieferschein) %>% group_by(materialnummer) %>% summarize(zg=n()) %>% arrange(desc(zg))
-
-count_zugriffe <- zugriffe %>% nrow()
-sum_zugriffe <- sum(zugriffe$zg)
-
-print("count_zg")
-count_zugriffe
-print("sum_zg")
-sum_zugriffe
-
-mean_zugriffe <- sum_zugriffe / count_zugriffe 
-print("mean_zg")
-mean_zugriffe
-
-zugriffe <- zugriffe %>% mutate(zg_minus_mean_squared=((zg-mean_zugriffe)**2))
-
-std_abw <- sqrt(sum(zugriffe$zg_minus_mean_squared) / count_zugriffe)
-print("std_abw")
-std_abw
-
-min <- min(zugriffe$zg)
-print("min_zg")
-min
-
-max <- max(zugriffe$zg)
-print("max_zg")
-max
-
-zugriffe
-
-grp_zg <- zugriffe %>% group_by(zg) %>% summarize(count=n())
+### Scatterplot Regeln
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Filter rules with confidence greater than 0.4 or 40%
+#subRules<-rules[quality(rules)$confidence>0.4]
+subRules<-rules[quality(rules)$lift>100]
+#Plot SubRules
+plot(subRules)
+#inspect(subRules)
+```
+### Regelgraph
+```{r, echo=FALSE}
+plot(subRules, method = "graph",  engine = "htmlwidget")
+```
 
 
 
+## Regeln für A,B
+```{r, include=FALSE}
+ls_class_comb_A_B <- ls_class_comb %>% filter(komb_klasse_zugriffe == 'A,B')
 
-plot <- grp_zg %>% filter(zg < 50)  #%>% filter(zg > 50)
+A_B_ls <- verkaeufe %>% select(lieferschein, materialnummer) %>% inner_join(ls_class_comb_A_B)
 
-plot
+A_B_ls
+```
 
-fig <- plot_ly(
-  data = plot,
-  x = ~zg,
-  y = ~count,
-  name = "X",
-  type = "bar"
-)
 
-fig
+```{r include=FALSE}
+#cast into a glimpse object
+gTemp <- glimpse(A_B_ls%>% select(lieferschein,materialnummer))
+
+#cast glimpse into a transcation object, requested by API
+transactionData <- ddply(gTemp,c("lieferschein"),
+                       function(df1)paste(df1$materialnummer,
+                       collapse = ","))
+
+#rename column and remove unused columns
+names(transactionData)[names(transactionData) == "V1"] <- "items"
+transactionData <- transactionData %>% select(items) #called basket layout
+
+gTemp
+transactionData
+```
+
+
+```{r, include=FALSE}
+#export the transaction object as CSV file and re-import it using special import constructor
+write.csv(transactionData,"./market_basket_A_B_transactions.csv", quote = FALSE, row.names = FALSE)
+
+tr <- read.transactions("./market_basket_A_B_transactions.csv", format = 'basket', sep=',')
+summary(tr)
+```
+
+```{r, include=FALSE}
+# search for rules beyond the items using Apriori algorithm
+#rules <- apriori(tr, parameter = list(supp=0.001, conf=0.5,maxlen=2770))
+rules <- apriori(tr, parameter = list(supp=0.001, conf=0.80, maxlen=2))
+rulesDF <- as(rules,"data.frame") %>% arrange(desc(confidence))
+summary(rules)
+```
+
+### Tabelle
+```{r, echo=FALSE}
+rulesDF %>% filter(lift>100) %>% arrange(desc(lift))
+```
+
+### Scatterplot Regeln
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Filter rules with confidence greater than 0.4 or 40%
+#subRules<-rules[quality(rules)$confidence>0.4]
+subRules<-rules[quality(rules)$lift>100]
+#Plot SubRules
+plot(subRules)
+#inspect(subRules)
+```
+### Regelgraph
+```{r, echo=FALSE}
+plot(subRules, method = "graph",  engine = "htmlwidget")
+```
+
+
+## Regeln für B
+```{r, include=FALSE}
+ls_class_comb_B <- ls_class_comb %>% filter(komb_klasse_zugriffe == 'B')
+
+B_ls <- verkaeufe %>% select(lieferschein, materialnummer) %>% inner_join(ls_class_comb_B)
+
+B_ls
+```
+
+
+```{r include=FALSE}
+#cast into a glimpse object
+gTemp <- glimpse(B_ls%>% select(lieferschein,materialnummer))
+
+#cast glimpse into a transcation object, requested by API
+transactionData <- ddply(gTemp,c("lieferschein"),
+                       function(df1)paste(df1$materialnummer,
+                       collapse = ","))
+
+#rename column and remove unused columns
+names(transactionData)[names(transactionData) == "V1"] <- "items"
+transactionData <- transactionData %>% select(items) #called basket layout
+
+gTemp
+transactionData
+```
+
+
+```{r, include=FALSE}
+#export the transaction object as CSV file and re-import it using special import constructor
+write.csv(transactionData,"./market_basket_B_transactions.csv", quote = FALSE, row.names = FALSE)
+
+tr <- read.transactions("./market_basket_B_transactions.csv", format = 'basket', sep=',')
+summary(tr)
+```
+
+```{r, include=FALSE}
+# search for rules beyond the items using Apriori algorithm
+#rules <- apriori(tr, parameter = list(supp=0.001, conf=0.5,maxlen=2770))
+rules <- apriori(tr, parameter = list(supp=0.0002, conf=0.80, maxlen=2))
+rulesDF <- as(rules,"data.frame") %>% arrange(desc(confidence))
+summary(rules)
+```
+### Tabelle
+```{r, echo=FALSE}
+rulesDF %>% filter(lift>100) %>% arrange(desc(lift))
+#rulesDF %>% filter(lift>100) %>% arrange(desc(lift))
+```
+
+
+### Scatterplot Regeln
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=8) 
+# Filter rules with confidence greater than 0.4 or 40%
+#subRules<-rules[quality(rules)$confidence>0.4]
+subRules<-rules[quality(rules)$lift>100]
+#Plot SubRules
+plot(subRules)
+#inspect(subRules)
+```
+### Regelgraph
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot(subRules, method = "graph",  engine = "htmlwidget")
 ```
 
 ```{r include=FALSE}
