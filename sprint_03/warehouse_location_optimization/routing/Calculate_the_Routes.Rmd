@@ -1,0 +1,860 @@
+---
+title: "Routen berechnen, Ergebnisse aggregieren und abspeichern"
+author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
+output:
+  html_notebook:
+    toc: true
+    toc_float: true
+    code_folding: none
+    number_sections: true
+---
+
+
+
+```{r include=FALSE}
+library(DBI)
+library(odbc)
+library(readr)
+library(leaflet)
+library(dplyr)
+library(stringr)
+library(glue)
+library(tictoc)
+readRenviron("../../../env_files/.Renviron.postgres")
+```
+
+
+
+```{r include=FALSE}
+# Verbindung zu unserer Datenbank für das Routing
+con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname_routing"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+
+
+```{r include=FALSE}
+get_con_to_normal_db <- function(){
+  # Verbindung zu unserer Haupt-Datenbank (Name = "postgres")
+  con_to_normal_db <- DBI::dbConnect(odbc::odbc(),
+                        Driver   = Sys.getenv("driver"),
+                        Server   = Sys.getenv("host"),
+                        Database = Sys.getenv("dbname"),
+                        UID      = Sys.getenv("user"),
+                        PWD      = Sys.getenv("password"),
+                        Port     = Sys.getenv("port"))
+  
+  return(con_to_normal_db)
+}
+
+
+
+get_con_to_routing_db <- function(){
+  # Verbindung zu unserer Datenbank für das Routing
+  con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
+                        Driver   = Sys.getenv("driver"),
+                        Server   = Sys.getenv("host"),
+                        Database = Sys.getenv("dbname_routing"),
+                        UID      = Sys.getenv("user"),
+                        PWD      = Sys.getenv("password"),
+                        Port     = Sys.getenv("port"))
+  
+  return(con_to_routing_db)
+}
+```
+
+
+
+```{r include=FALSE}
+generate_coord_values_string <- function(lats, longs) {
+  tibble(lats, longs) %>% 
+    mutate(coord_string = glue("({lats}, {longs})")) %>% 
+    summarise(coord_values_string = str_flatten(coord_string, collapse = ", ")) %>% 
+    pull(1) %>% 
+    return()
+}
+```
+
+
+
+```{r include=FALSE}
+bd_dijkstra_many_to_many <- function(start_coord_longs, start_coord_lats, destination_coord_longs, destination_coord_lats){
+
+  start_coords_values_string <- generate_coord_values_string(lats = start_coord_lats, longs = start_coord_longs)
+  destination_coords_values_string <- generate_coord_values_string(lats = destination_coord_lats, longs = destination_coord_longs)
+  
+  query <- glue("
+          -- Hole zu allen start_coords den jeweils nächstgelegenen Node
+           WITH start_vids AS (
+            	SELECT DISTINCT ON (id) id
+              FROM
+              	(SELECT lat, long
+              	FROM (
+              			VALUES {start_coords_values_string}
+              		 ) AS start_coords (lat, long)
+              	) AS start_coords
+              	 
+              	 CROSS JOIN LATERAL
+              	 
+              	 (
+              		SELECT id,
+              				--the_geom,
+              				--ST_X(the_geom) AS proj_long,
+              				--ST_Y(the_geom) AS proj_lat,
+              				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(start_coords.long, start_coords.lat), 4326) AS dist
+              		FROM de_edges_vertices_pgr AS vertices
+              		ORDER BY dist
+              		LIMIT 1
+              	)  AS vertices
+            ),
+            
+            
+            -- Hole zu allen end_coords den jeweils nächstgelegenen Node
+            end_vids AS (
+            	SELECT DISTINCT ON (id) id
+              FROM
+              	(SELECT lat, long
+              	FROM (
+              			VALUES {destination_coords_values_string}
+              		 ) AS end_coords (lat, long)
+              	) AS end_coords
+              	 
+              	 CROSS JOIN LATERAL
+              	 
+              	 (
+              		SELECT id,
+              				--the_geom,
+              				--ST_X(the_geom) AS proj_long,
+              				--ST_Y(the_geom) AS proj_lat,
+              				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(end_coords.long, end_coords.lat), 4326) AS dist
+              		FROM de_edges_vertices_pgr AS vertices
+              		ORDER BY dist
+              		LIMIT 1
+              	)  AS vertices
+            )
+            
+            -- Berechne die Routen von allen Start- zu allen End-Nodes
+            SELECT seq,
+                  path_seq,
+                  start_vid,
+                  end_vid,
+                  node,
+                  edge,
+                  ST_X(the_geom_node) as long,
+                  ST_Y(the_geom_node) as lat,
+                  ST_LengthSpheroid(the_geom_edge, 'SPHEROID[\"GRS_1980\",6378137,298.257222101]') as length_of_edge
+            FROM pgr_bdDijkstra(
+            	  'SELECT id, source, target, cost, reverse_cost
+            	  FROM de_edges',
+            	  ARRAY(SELECT id from start_vids), 
+            	  ARRAY(SELECT id from end_vids)
+            ) as routes
+            
+            INNER JOIN
+            
+    	      (SELECT id, the_geom as the_geom_node
+    	      FROM de_edges_vertices_pgr) as nodes
+    	      ON routes.node = nodes.id
+    	      
+    	      INNER JOIN
+            (SELECT id, the_geom as the_geom_edge
+            FROM de_edges) as edges
+            ON routes.edge = edges.id;
+            ")
+  
+  
+  # return(query)
+  return(dbGetQuery(conn = con_to_routing_db, statement = query))
+}
+```
+
+
+
+
+
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+
+
+# Achtung
+Diese Notebook dient der Berechnung der Routen von allen Kunden-Clustern zu allen potenziellen Lagerstandorten. Dies ist mit einer beträchtlichen Laufzeit verbunden. Im Optimalfall wird dieses Notebook nur einmal ausgeführt und danach die entsprechenden Code-Chunks auskommentiert (oder durch stop()-Anweisung blockiert), sodass nicht versehentlich irgendwann alle Routen noch einmal ausgerechnet werden.
+
+
+
+# Routen von Lagern zu Kunden berechnen
+```{r include=FALSE}
+get_bd_dijkstra_many_to_many_aggregated_results_query_string <- function(start_coord_longs, start_coord_lats, destination_coord_longs, destination_coord_lats){
+
+  start_coords_values_string <- generate_coord_values_string(lats = start_coord_lats, longs = start_coord_longs)
+  destination_coords_values_string <- generate_coord_values_string(lats = destination_coord_lats, longs = destination_coord_longs)
+  
+  query <- glue("
+          -- Hole zu allen start_coords den jeweils nächstgelegenen Node
+           WITH start_vids AS (
+            	SELECT DISTINCT ON (id) id
+              FROM
+              	(SELECT lat, long
+              	FROM (
+              			VALUES {start_coords_values_string}
+              		 ) AS start_coords (lat, long)
+              	) AS start_coords
+              	 
+              	 CROSS JOIN LATERAL
+              	 
+              	 (
+              		SELECT id,
+              				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(start_coords.long, start_coords.lat), 4326) AS dist
+              		FROM de_edges_vertices_pgr AS vertices
+              		ORDER BY dist
+              		LIMIT 1
+              	)  AS vertices
+            ),
+            
+            
+            -- Hole zu allen end_coords den jeweils nächstgelegenen Node
+            end_vids AS (
+            	SELECT DISTINCT ON (id) id
+              FROM
+              	(SELECT lat, long
+              	FROM (
+              			VALUES {destination_coords_values_string}
+              		 ) AS end_coords (lat, long)
+              	) AS end_coords
+              	 
+              	 CROSS JOIN LATERAL
+              	 
+              	 (
+              		SELECT id,
+              				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(end_coords.long, end_coords.lat), 4326) AS dist
+              		FROM de_edges_vertices_pgr AS vertices
+              		ORDER BY dist
+              		LIMIT 1
+              	)  AS vertices
+            )
+            
+            -- Berechne die Längen der Routen von allen Start- zu allen End-Nodes
+            SELECT start_vid,
+                  proj_start_long,
+                  proj_start_lat,
+                  end_vid,
+                  proj_end_long,
+                  proj_end_lat,
+                  sum(ST_LengthSpheroid(the_geom_edge, 'SPHEROID[\"GRS_1980\",6378137,298.257222101]')) / 1000 as length_of_route_in_kilometers
+            FROM pgr_bdDijkstra(
+            	  'SELECT id, source, target, cost, reverse_cost
+            	  FROM de_edges',
+            	  ARRAY(SELECT id from start_vids), 
+            	  ARRAY(SELECT id from end_vids)
+            ) as routes
+            
+            
+            INNER JOIN
+  
+  
+           (
+          	 SELECT id,
+          	        ST_X(the_geom) as proj_start_long,
+          	        ST_Y(the_geom) as proj_start_lat
+          	FROM de_edges_vertices_pgr
+           ) as start_nodes
+           ON routes.start_vid = start_nodes.id
+            
+            
+            INNER JOIN
+            
+            
+  	       (
+          	 SELECT id,
+          	        ST_X(the_geom) as proj_end_long,
+          	        ST_Y(the_geom) as proj_end_lat
+        	  FROM de_edges_vertices_pgr
+           ) as end_nodes
+           ON routes.end_vid = end_nodes.id
+    	      
+    	      
+    	      INNER JOIN
+    	      
+    	      
+            (
+              SELECT id,
+                      the_geom as the_geom_edge
+              FROM de_edges
+            ) as edges
+            ON routes.edge = edges.id
+            
+            
+            GROUP BY start_vid,
+                    proj_start_long,
+                    proj_start_lat,
+                    end_vid,
+                    proj_end_long,
+                    proj_end_lat
+            ")
+  
+  
+  return(query)
+}
+```
+
+
+
+```{r include=FALSE}
+get_evaluate_warehouses_query_string <- function(start_coord_longs, start_coord_lats, destination_coord_longs, destination_coord_lats){
+  # Liefert den Query-String, um die Streckenlängen vom Lager zu allen Kunden UND von allen Kunden zum Lager zu berechnen.
+  from_warehouses_query <- get_bd_dijkstra_many_to_many_aggregated_results_query_string(
+    start_coord_longs = start_coord_longs,
+    start_coord_lats = start_coord_lats,
+    destination_coord_longs = destination_coord_longs,
+    destination_coord_lats = destination_coord_lats
+  )
+  
+  to_warehouses_query <- get_bd_dijkstra_many_to_many_aggregated_results_query_string(
+    start_coord_longs = destination_coord_longs,
+    start_coord_lats = destination_coord_lats,
+    destination_coord_longs = start_coord_longs,
+    destination_coord_lats = start_coord_lats
+  )
+  
+  query_string <- glue("
+                        SELECT *
+                        FROM
+                        (
+                          {from_warehouses_query}
+                        ) AS from_warehouses
+                       
+                       
+                       UNION
+                       
+                       SELECT *
+                       FROM
+                       (
+                        {to_warehouses_query}
+                       ) AS to_warehouses
+                       ;
+                       ")
+}
+```
+
+
+
+```{r include=FALSE}
+# Benötigte Koordinaten aus der Datenbank laden
+customer_clusters <- dbGetQuery(conn = con_to_routing_db, statement = "SELECT * FROM customer_cluster;")
+potential_warehouse_locations <- dbGetQuery(conn = con_to_routing_db, statement = "SELECT * FROM potential_warehouse_locations;")
+```
+
+
+
+```{r include=FALSE}
+tic()
+
+stop("Willst du das wirklich ausführen? Die Berechnung dauert ca. 10 h. Abgesehen davon, werden Daten in die Datenbank geschrieben.") # Todo: Nach Ausführung wieder entkommentieren
+
+# Längen- und Breitengrade der Kunden-Cluster in zwei Vektoren speichern
+destination_coord_lats <- customer_clusters$lat
+destination_coord_longs <- customer_clusters$long
+
+
+# Iteriere über alle potenziellen Lagerstandorte
+for(i in 1:nrow(potential_warehouse_locations)) {
+# for(i in 1:2) {# Zum Testen 
+  
+  print(glue("Anfang for-Schleife, i = {i}"))
+  
+  # Längen- und Breitengrade des aktuellen potenziellen Lagers in zwei Vektoren speichern
+  start_coord_lats <- potential_warehouse_locations[i, "proj_lat"]
+  start_coord_longs <- potential_warehouse_locations[i, "proj_long"]
+  
+  query_string <- 
+    get_evaluate_warehouses_query_string(
+      start_coord_longs = start_coord_longs,
+      start_coord_lats = start_coord_lats,
+      destination_coord_longs = destination_coord_longs,
+      destination_coord_lats = destination_coord_lats
+    )
+  
+  results <- dbGetQuery(conn = con_to_routing_db, statement = query_string)
+  
+  # Ermittle die Knoten-Id vom Lagerstandort
+  warehouse_vertex_id <-
+    results %>%
+    group_by(start_vid) %>%
+    summarise(count = n()) %>%
+    arrange(desc(count)) %>%
+    select(start_vid) %>%
+    head(1) %>%
+    pull(1)
+  
+  # Ergebnisse von Hin- und Rückwegen zusammenfügen
+  compact_results <- 
+    results %>%
+    filter(start_vid == warehouse_vertex_id) %>% 
+    inner_join(
+      results %>% 
+        select(start_vid,
+               end_vid,
+               length_of_route_in_kilometers
+               )
+      ,
+      by = c("start_vid" = "end_vid", "end_vid" = "start_vid")
+    ) %>% 
+    rename(
+      km_start_end = length_of_route_in_kilometers.x,
+      km_end_start = length_of_route_in_kilometers.y
+    )
+  
+  
+  # Ergebnisse in Datenbank schreiben
+  con_to_normal_db = get_con_to_normal_db()
+  dbAppendTable(conn = con_to_normal_db, name = "routing_agg_results", value = compact_results)
+  dbDisconnect(con_to_normal_db)
+  
+  print(glue("Ende for-Schleife, i = {i}"))
+}
+
+toc()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Angepasster Code wegen Timeouts
+Für manche potenzielle Lagerstandorte wird obige Query nicht erfolgreich durchgeführt (vermutlich Timeouts). Deshalb hier nochmal der Code in einer angepassten Variante, bei der zwei kleinere statt der einen großen Query zum Berechnen der Routen abgesetzt werden.
+```{r include=FALSE}
+# Verbindung zu unserer Datenbank für das Routing
+con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname_routing"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+
+
+```{r include=FALSE}
+tic()
+
+stop("Willst du das wirklich ausführen? Die Berechnung dauert ca. 10 h. Abgesehen davon, werden Daten in die Datenbank geschrieben.") # Todo: Nach Ausführung wieder entkommentieren
+
+# Längen- und Breitengrade der Kunden-Cluster in zwei Vektoren speichern
+destination_coord_lats <- customer_clusters$lat
+destination_coord_longs <- customer_clusters$long
+
+
+# Iteriere über alle potenziellen Lagerstandorte
+for(i in 1:nrow(potential_warehouse_locations)) {
+# for(i in c(10, 11, 18, 20, 21, 22, 26, 30, 33, 41, 45, 46, 63, 70)) {# Zum Testen
+  
+  print(glue("Anfang for-Schleife, i = {i}"))
+  
+  # Längen- und Breitengrade des aktuellen potenziellen Lagers in zwei Vektoren speichern
+  start_coord_lats <- potential_warehouse_locations[i, "proj_lat"]
+  start_coord_longs <- potential_warehouse_locations[i, "proj_long"]
+  
+  
+  from_warehouses_query <- get_bd_dijkstra_many_to_many_aggregated_results_query_string(
+    start_coord_longs = start_coord_longs,
+    start_coord_lats = start_coord_lats,
+    destination_coord_longs = destination_coord_longs,
+    destination_coord_lats = destination_coord_lats
+  )
+  from_warehouses_query <- glue("{from_warehouses_query};")
+  
+  
+  to_warehouses_query <- get_bd_dijkstra_many_to_many_aggregated_results_query_string(
+    start_coord_longs = destination_coord_longs,
+    start_coord_lats = destination_coord_lats,
+    destination_coord_longs = start_coord_longs,
+    destination_coord_lats = start_coord_lats
+  )
+  to_warehouses_query <- glue("{to_warehouses_query};")
+  
+  
+  from_warehouses_results <- dbGetQuery(conn = con_to_routing_db, statement = from_warehouses_query)
+  to_warehouses_results <- dbGetQuery(conn = con_to_routing_db, statement = to_warehouses_query)
+  results <- rbind(from_warehouses_results, to_warehouses_results)
+  
+
+  # Ermittle die Knoten-Id vom Lagerstandort
+  warehouse_vertex_id <-
+    results %>%
+    group_by(start_vid) %>%
+    summarise(count = n()) %>%
+    arrange(desc(count)) %>%
+    select(start_vid) %>%
+    head(1) %>%
+    pull(1)
+
+  # Ergebnisse von Hin- und Rückwegen zusammenfügen
+  compact_results <-
+    results %>%
+    filter(start_vid == warehouse_vertex_id) %>%
+    inner_join(
+      results %>%
+        select(start_vid,
+               end_vid,
+               length_of_route_in_kilometers
+               )
+      ,
+      by = c("start_vid" = "end_vid", "end_vid" = "start_vid")
+    ) %>%
+    rename(
+      km_start_end = length_of_route_in_kilometers.x,
+      km_end_start = length_of_route_in_kilometers.y
+    )
+
+
+  # Ergebnisse in Datenbank schreiben
+  con_to_normal_db = get_con_to_normal_db()
+  dbAppendTable(conn = con_to_normal_db, name = "routing_agg_results", value = compact_results)
+  dbDisconnect(con_to_normal_db)
+
+  print(glue("Ende for-Schleife, i = {i}"))
+}
+
+toc()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Playground
+## Test mit einem Lagerstandort 1
+```{r}
+customer_clusters %>% 
+  head()
+```
+
+
+```{r}
+potential_warehouse_locations %>% 
+  head()
+```
+
+
+```{r}
+potential_warehouse_locations[1, "proj_lat"]
+```
+
+
+```{r}
+potential_warehouse_locations[1,]
+```
+
+
+
+
+```{r echo=FALSE}
+tic()
+
+start_coord_lats <- potential_warehouse_locations[1, "proj_lat"]
+start_coord_longs <- potential_warehouse_locations[1, "proj_long"]
+destination_coord_lats <- customer_clusters$lat
+destination_coord_longs <- customer_clusters$long
+
+
+# Routen berechnen
+routes_1 <- bd_dijkstra_many_to_many(start_coord_longs = start_coord_longs,
+                                   start_coord_lats = start_coord_lats,
+                                   destination_coord_longs = destination_coord_longs,
+                                   destination_coord_lats = destination_coord_lats)
+
+toc()
+```
+
+
+
+```{r echo=FALSE}
+end_vids <- 
+  routes_1 %>% 
+    distinct(end_vid) %>% 
+    pull()
+
+colors <- c("red", "green", "blue", "orange", "purple", "cyan", "yellow", "brown", "black")
+
+map <- 
+  leaflet(width = "100%", height = "700px") %>% 
+  addTiles()
+
+for(i in 1:length(end_vids)){
+  route <- 
+    routes_1 %>% 
+    filter(end_vid == end_vids[i]) %>% 
+    select(lat, long)
+  
+  color <- colors[i %% (length(colors)+1)]
+  map <- 
+    map %>% 
+    addCircleMarkers(lat = start_coord_lats, lng = start_coord_longs) %>% 
+    addPolylines(lat = route$lat, lng = route$long, color = color)
+}
+
+map
+```
+
+
+```{r}
+routes_1 %>% 
+  nrow()
+```
+
+
+
+## Test mit einem Lagerstandort 2
+```{r echo=FALSE}
+tic()
+
+start_coord_lats <- potential_warehouse_locations[5, "proj_lat"]
+start_coord_longs <- potential_warehouse_locations[5, "proj_long"]
+destination_coord_lats <- customer_clusters$lat
+destination_coord_longs <- customer_clusters$long
+
+
+# Routen berechnen
+routes_2 <- bd_dijkstra_many_to_many(start_coord_longs = start_coord_longs,
+                                   start_coord_lats = start_coord_lats,
+                                   destination_coord_longs = destination_coord_longs,
+                                   destination_coord_lats = destination_coord_lats)
+
+toc()
+```
+
+
+
+```{r echo=FALSE}
+end_vids <- 
+  routes_2 %>% 
+    distinct(end_vid) %>% 
+    pull()
+
+colors <- c("red", "green", "blue", "orange", "purple", "cyan", "yellow", "brown", "black")
+
+map <- 
+  leaflet(width = "100%", height = "700px") %>% 
+  addTiles()
+
+for(i in 1:length(end_vids)){
+  route <- 
+    routes_2 %>% 
+    filter(end_vid == end_vids[i]) %>% 
+    select(lat, long)
+  
+  color <- colors[i %% (length(colors)+1)]
+  map <- 
+    map %>% 
+    addCircleMarkers(lat = start_coord_lats, lng = start_coord_longs) %>% 
+    addPolylines(lat = route$lat, lng = route$long, color = color)
+}
+
+map
+```
+
+
+```{r}
+routes_2 %>% 
+  nrow()
+```
+
+
+## Test mit einem Lagerstandort 3
+```{r echo=FALSE}
+tic()
+
+start_coord_lats <- potential_warehouse_locations[12, "proj_lat"]
+start_coord_longs <- potential_warehouse_locations[12, "proj_long"]
+destination_coord_lats <- customer_clusters$lat
+destination_coord_longs <- customer_clusters$long
+
+
+# Routen berechnen
+routes_3 <- bd_dijkstra_many_to_many(start_coord_longs = start_coord_longs,
+                                   start_coord_lats = start_coord_lats,
+                                   destination_coord_longs = destination_coord_longs,
+                                   destination_coord_lats = destination_coord_lats)
+
+toc()
+```
+
+
+
+```{r echo=FALSE}
+end_vids <- 
+  routes_3 %>% 
+    distinct(end_vid) %>% 
+    pull()
+
+colors <- c("red", "green", "blue", "orange", "purple", "cyan", "yellow", "brown", "black")
+
+map <- 
+  leaflet(width = "100%", height = "700px") %>% 
+  addTiles()
+
+for(i in 1:length(end_vids)){
+  route <- 
+    routes_3 %>% 
+    filter(end_vid == end_vids[i]) %>% 
+    select(lat, long)
+  
+  color <- colors[i %% (length(colors)+1)]
+  map <- 
+    map %>% 
+    addCircleMarkers(lat = start_coord_lats, lng = start_coord_longs) %>% 
+    addPolylines(lat = route$lat, lng = route$long, color = color)
+}
+
+map
+```
+
+
+```{r}
+routes_3 %>% 
+  nrow()
+```
+
+
+## Further Investigation and Calculation
+```{r}
+routes_1 %>%
+  head()
+```
+
+
+
+
+```{r}
+routes_1 %>% 
+  distinct(start_vid)
+```
+
+
+```{r}
+routes_1 %>% 
+  distinct(end_vid) %>% 
+  nrow()
+```
+
+
+```{r}
+routes_2 %>% 
+  distinct(start_vid)
+```
+
+
+```{r}
+routes_2 %>% 
+  distinct(end_vid) %>% 
+  nrow()
+```
+
+
+
+```{r}
+routes_3 %>% 
+  distinct(start_vid)
+```
+
+
+
+```{r}
+routes_3 %>% 
+  distinct(end_vid) %>% 
+  nrow()
+```
+
+
+
+
+
+
+```{r}
+routes_1 %>% 
+  head()
+```
+
+
+
+
+
+
+
+
+
+
+

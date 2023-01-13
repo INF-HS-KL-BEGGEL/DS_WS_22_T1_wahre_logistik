@@ -1,0 +1,141 @@
+---
+title: "Clustering der Kunden"
+author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
+output:
+  html_notebook:
+    toc: true
+    toc_float: true
+    code_folding: none
+    number_sections: true
+---
+
+```{r echo=FALSE}
+stop("In diesem Notebook werden in einigen Code Chunks Datenbanktabellen neu befüllt. Diese Stop-Anweisung soll verhindern, dass die Chunks versehentlich bei einem 'Run All' ausgeführt und somit unbeabsichtigte Änderungen an der Datenbank vorgenommen werden.")
+```
+
+
+```{r include=FALSE}
+library(DBI)
+library(odbc)
+library(readr)
+library(leaflet)
+library(dplyr)
+library(stringr)
+library(glue)
+library(tictoc)
+readRenviron("../../../env_files/.Renviron.postgres")
+```
+
+```{r include=FALSE}
+# Verbindung zu unserer Datenbank für das Routing (Name = "routing_db")
+con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname_routing"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+
+# Verbindung zu unserer Haupt-Datenbank (Name = "postgres")
+con_to_normal_db <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+
+
+
+
+# Kunden-Cluster
+## Ermittlung
+Unsere Kunden sind schon "natürlich" geclustered. Daher genügt es, einfach die unterschiedlichen Kombinationen aus Längen- und Breitengrad zu selektieren.
+```{r}
+# Unsere Kunden sind schon "natürlich" geclustered. Daher genügt es, einfach die unterschiedlichen Kombinationen aus Längen- und Breitengrad zu selektieren.
+
+query <- "
+            SELECT DISTINCT ON(laengengrad, breitengrad) 
+          					laengengrad as long,
+          					breitengrad as lat
+            FROM kundenstammdaten;
+         "
+
+customer_cluster_coordinates <- dbGetQuery(conn = con_to_normal_db, statement = query)
+```
+
+
+```{r echo=FALSE}
+# customer_cluster_coordinates %>% nrow()
+```
+
+## Visualisierung
+```{r echo=FALSE}
+leaflet(width = "100%", height = "700px") %>%
+  addTiles() %>% 
+  addCircleMarkers(lng = customer_cluster_coordinates$long,
+                   lat = customer_cluster_coordinates$lat,
+                   radius = 6)
+```
+
+
+## Abspeichern der Cluster in Datenbank
+```{sql connection = con_to_routing_db}
+DROP TABLE IF EXISTS customer_cluster;
+
+CREATE TABLE customer_cluster (
+	lat double precision NOT NULL,
+	long double precision NOT NULL,
+	PRIMARY KEY (lat, long)
+);
+```
+
+```{r}
+# Schreibe die Kunden-Cluster in die DB
+dbAppendTable(conn=con_to_routing_db, name = "customer_cluster", value=customer_cluster_coordinates)
+```
+
+
+## Cluster auf Straße mappen
+```{sql connection = con_to_routing_db}
+DROP TABLE IF EXISTS customer_cluster_proj;
+
+CREATE TABLE customer_cluster_proj (
+  proj_vertex_id integer,
+	proj_lat double precision NOT NULL,
+	proj_long double precision NOT NULL,
+	proj_the_geom geometry NOT NULL,
+	original_lat double precision NOT NULL,
+	original_long double precision NOT NULL,
+	primary key (original_lat, original_long)
+);
+```
+
+```{sql connection=con_to_routing_db}
+-- Hier passieren die folgenden Schritte:
+-- 1. Für jeden unserer Kunden-Cluster suchen wir den nächstgelegenden Knoten aus unserer routing_db.
+-- 2. Ein paar Aliase einführen.
+-- 3. Das Ergebnis schreiben wir in die Tabelle "customer_cluster_proj"
+INSERT INTO customer_cluster_proj(proj_vertex_id, proj_long, proj_lat, proj_the_geom, original_lat, original_long)
+SELECT --DISTINCT ON (id)
+        id AS proj_vertex_id, proj_long, proj_lat, the_geom AS proj_the_geom, lat AS original_lat, long AS original_long
+FROM customer_cluster
+CROSS JOIN LATERAL (
+	SELECT id,
+			the_geom,
+			ST_X(the_geom) AS proj_long,
+			ST_Y(the_geom) AS proj_lat,
+			vertices.the_geom <-> ST_SetSRID(ST_MakePoint(customer_cluster.long, customer_cluster.lat), 4326) AS dist
+	FROM de_edges_vertices_pgr AS vertices
+	ORDER BY dist
+	LIMIT 1
+)  AS vertices;
+```
+
+
