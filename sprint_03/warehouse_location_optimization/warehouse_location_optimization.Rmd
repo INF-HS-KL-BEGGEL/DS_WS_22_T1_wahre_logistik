@@ -157,7 +157,6 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
 ```
 Beim Mapping sind zum Teil auch verschiedene Rasterpunkte auf denselben Straßenknoten abgebildet worden. Deshalb wurden aus den `r raster_points %>% nrow()` Rasterpunkten `r potential_warehouse_locations %>% nrow()` Standortkandidaten in Deutschland.
 
-**Todo: Vielleicht noch beispielhaft an ein paar Rasterpunkten das Mapping mit Pfeilen zeigen.**
 
 ## Kundenclustering
 Um die Anzahl der zu berechnenden Routen zu reduzieren, sollen die Kunden, die nahe beieinander, zu einem Cluster zusammengefasst werden. Glücklicherweise liegen die Kunden schon "von Haus aus" in  `r customer_cluster_proj %>% distinct(original_lat, original_long) %>% nrow()` Clustern vor. Die Cluster-Koordinaten müssen ebenfalls auf die Straße abgebildet werden.
@@ -182,12 +181,11 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
                    radius = 6,
                    color = "red")
 ```
+(blau = original, rot = abgebildet)  
 Nach der Abbildung auf Knoten unseres Straßennetzwerks liegen `r customer_cluster_proj %>% distinct(proj_vertex_id) %>% nrow()` Koordinaten vor.
 
 
-Todo:
 
-1. Vielleicht noch eine Legende an die Karte (Was bedeuten rote/blaue Kreise?)
 
 
 ### Kunden ohne Kundenstammdaten
@@ -245,7 +243,6 @@ kunden_ohne_stammdaten_enhanced
 Die betreffenden Kunden gehören nicht zu unseren umsatzstarken Kunden. Selbst zusammen machen sie gerade einmal `r round(sum(kunden_ohne_stammdaten_enhanced$anteil_am_gesamtumsatz) * 100, digits = 2)` % am Gesamtumsatz aus.
 
 
-Todo: Vielleicht diese Kunden auch nochmal hinsichtlich Bestellungen anschauen
 
 
 
@@ -255,13 +252,6 @@ Todo: Vielleicht diese Kunden auch nochmal hinsichtlich Bestellungen anschauen
 
 
 ## Routenberechnung
-Todo:
-
-1. vllt. nochmal eine Visualisierung: gerade Linien von einem Lagerkandidat zu den Kundenclustern mit der Strecklänge als Kosten an der Linie
-1. alle Lager darstellen und die, die weggefallen sind einfärben
-
-
-
 ```{r include=FALSE}
 generate_coord_values_string <- function(lats, longs) {
   tibble(lats, longs) %>% 
@@ -271,7 +261,6 @@ generate_coord_values_string <- function(lats, longs) {
     return()
 }
 ```
-
 
 
 ```{r include=FALSE}
@@ -530,14 +519,9 @@ non_routable_customers_enhanced <-
 non_routable_customers_enhanced
 ```
 
-Die nicht routbaren Kunden sind hinsichtlich des Umsatzes nicht zu vernachlässigen. Zusammen machen sie `r round(sum(non_routable_customers_enhanced$anteil_am_gesamtumsatz) * 100, digits = 2)` % vom Gesamtumsatz aus
+Die nicht routbaren Kunden sind hinsichtlich des Umsatzes nicht zu vernachlässigen. Zusammen machen sie `r round(sum(non_routable_customers_enhanced$anteil_am_gesamtumsatz) * 100, digits = 2)` % vom Gesamtumsatz aus.
 
 
-
-
-
-## Nicht routbare Lagerkandidaten
-Todo
 
 
 
@@ -684,12 +668,10 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
                    ) 
 ```
 
-Todo: vielleicht die Ränge dauerhaft anzeigen (z. B. im Circle)
 
 
 
 ### Die Kundencluster mit den meisten Kunden
-Todo: Dieses Kapitel überdenken bzw. wenn es drin bleibt überarbeiten
 ```{r include=FALSE}
 tmp <- 
   customer_cluster_data_enhanced %>%
@@ -709,10 +691,9 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
                    radius = 6
                    )
 ```
-Todo: Vielleicht die Lager noch dazu (und die Kundencluster dann einfach purple oder so)
 
 
-```{r}
+```{r include=FALSE}
 tmp
 ```
 
@@ -837,71 +818,17 @@ leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
 ```
 
 
-Todo: Vielleicht noch die km in die Label
-Todo: Vielleicht Platz 1 - 3 besonders einfärben
 
 
-
-
-
-
-## Kriterium: Umsatz
-Todo
-
-
-
-Todo: Alle Ergebnis (z. B. alle Top-5-Lager) in eine Karte
 
 
 ## Ausblick
+- Umsatz
 - Gewicht
 - Volumen
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Playground (Todo: noch raus damit)
-```{r}
-lats = seq(from=40, to=45, length.out=20)
-lons = rep(12, 20)
-```
-
-```{r}
-lons
-```
-
-
-```{r echo=FALSE}
-leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>% 
-  addTiles() %>% 
-  addCircleMarkers(lat = lats,
-                   lng = lons,
-                   radius = 6)
-```
-
-
-```{r echo=FALSE}
-leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>% 
-  addTiles() %>% 
-  addCircleMarkers(lat = lats,
-                   lng = lons,
-                   radius = 6)
-```
 
 
 
