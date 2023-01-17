@@ -50,11 +50,11 @@ lieferscheinProKunde <- dbGetQuery(conn=con, statement = "Select lieferschein, m
 
 ```{r include=FALSE}
 #cast into a glimpse object
-gTemp <- glimpse(lieferscheinProKunde%>% select(lieferschein,materialnummer))
+gTemp <- glimpse(lieferscheinProKunde)
 
-#cast glimpse into a transcation object, requested by API
+#groub by delivery bill and merge all materialnumbers in one list
 transactionData <- ddply(gTemp,c("lieferschein"),
-                       function(df1)paste(df1$materialnummer,
+                       function(dataFrame)paste(dataFrame$materialnummer,
                        collapse = ","))
 
 #rename column and remove unused columns
@@ -66,9 +66,10 @@ transactionData
 ```
 
 ```{r include=FALSE}
-#export the transaction object as CSV file and re-import it using special import constructor
+#export the data as CSV file
 write.csv(transactionData,"./market_basket_transactions.csv", quote = FALSE, row.names = FALSE)
 
+#import the data using a Transaction object builder
 tr <- read.transactions("./market_basket_transactions.csv", format = 'basket', sep=',')
 summary(tr)
 ```
@@ -89,31 +90,26 @@ itemFrequencyPlot(tr,topN=30,type="absolute",col=brewer.pal(8,'Pastel2'), main="
 Als nächstes betrachten wir uns die konkreten Korrelationen bzw. die Regeln, die uns die Apriorie Funktion berechnet hat:
 
 ```{r include=FALSE}
-# search for rules beyond the items using Apriori algorithm
-rules <- apriori(tr, parameter = list(supp=0.001, conf=0.5,maxlen=2770))
+# search for rules within the items using Apriori algorithm
+rules <- apriori(tr, parameter = list(supp=0.001, conf=0.5,maxlen=10))
 rulesDF <- as(rules,"data.frame") %>% arrange(desc(confidence))
 summary(rules)
 rulesDF
 ```
 
-
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
-# Filter rules with confidence greater than 0.4 or 40%
-subRules<-rules[quality(rules)$confidence>0.4]
-#Plot SubRules
-plot(subRules)
+#Plot rules
+plot(rules)
 ```
 Dabei gilt:
 Confidence: Die Wahrscheinlichkaiet, dass wenn A gekauft wurde, auch B gekauft wird.  
-Support: Die Häufigkeit wie oft diese Korrelation im gesamten Datensatz zu finden ist.   
-Lift: Beschreibt die Korrelation zwischen A und B.  
+Support: Die Häufigkeit wie oft diese Korrelation im gesamten Datensatz zu finden ist.
+Lift: Beschreibt die Korrelation zwischen A und B.
   - Bei einem Lift von 1 gibt es keine Abhängigkeit zwischen beiden und es kann keine Vorhersage gemacht werden  
   - Bei einem Lift > 1 sind beide von einander abhängig. Desto höher der Lift, umso stärker die Abhängigkeit  
 
-Daraus lässt sich schließen, dass meist die Abhängigkeiten sehr einseitig sind.
-
 ```{r include=FALSE}
-#defining some functions for mudalarisation
+#defining some functions for modularisation
 getRulesFor <- function(material) {
   temp <- apriori(tr, parameter = list(supp=0.001, conf=0.5),appearance = list(default="lhs",rhs=material))
   rulesSpecificDF <- as(temp,"data.frame") %>% arrange(desc(confidence))
@@ -137,7 +133,6 @@ plotMaterialRules <- function(material,amountOfRules) {
 }
 ```
 
-
 ```{r include=FALSE}
 # Regeln für das meist referenzierte Produkt '276012000':
 rulesSpecific <- getRulesFor("276012000")
@@ -146,11 +141,8 @@ rulesSpecific
 Betrachten wir die Regeln für das Produkt mit den meisten Regeln '276012000':
 
 ```{r echo=FALSE}
-#Bar diagramm for total and rel. retail value per cluster
 ggplot(rulesSpecific %>% select(rules,confidence,support, ruleNumber), aes(x=ruleNumber, y=confidence,fill=confidence)) +
   geom_bar(stat="identity", fill="steelblue",color="white")+
-  #geom_text(aes(label=paste(as.character(round(verkaufswert_rel, digits = 2)),"%")), vjust=+3, size=3.5)+
-  #geom_text(aes(label=verkaufswertDesClusters), vjust=+1.3, size=3.5)+
   theme_minimal()
 ```
 Ebenso lassen sich die jeweiligen Regeln in Detail betrachten:

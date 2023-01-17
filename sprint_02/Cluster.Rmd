@@ -150,7 +150,6 @@ sumOfClusters <- sumOfClusters %>% group_by(cluster) %>% dplyr::summarize(
   bestellungen_avg_imCluster=mean(bestellungen),
   kunden=n())
 sumOfClusters
-gesamtVerkaufswert
 ```
 
 Wir ordnen die Cluster nach ihrer Größe und es wird auffällig, dass einer die Cluster mit weitem Abstand die Dominanteste ist und damit die meisten Kunden zu ihm gehören.
