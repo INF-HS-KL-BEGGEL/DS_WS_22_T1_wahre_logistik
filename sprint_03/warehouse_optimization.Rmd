@@ -117,11 +117,19 @@ vk_zg_class <- verkaeufe %>% dplyr::inner_join(classes_mat)
 
 vk_zg_class
 ```
+
 ```{r include=FALSE}
 ls_class_comb <- vk_zg_class %>% group_by(lieferschein) %>% arrange(klasse_zugriffe) %>% dplyr::summarize(komb_klasse_zugriffe=paste0(unique(klasse_zugriffe), collapse = ","))
 
 ls_class_comb
 ```
+
+# ```{r include=FALSE}
+# test <- vk_zg_class %>% group_by(lieferschein) %>% arrange(materialnummer) %>% dplyr::summarize(mat_comb=paste0(unique(materialnummer), collapse = ";"))
+ 
+# write.csv(test %>% select(lieferschein, mat_comb),"./comb.csv", quote = FALSE, row.names = FALSE)
+# ```
+
 
 ```{r, echo=FALSE}
 class_ls_count <- ls_class_comb %>% dplyr::group_by(komb_klasse_zugriffe) %>% dplyr::summarize(anzahl_ls_mit_komb=n())
