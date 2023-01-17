@@ -43,3 +43,6 @@ vignettes/*.pdf
 # Notebook files
 *.nb.html
 *.html
+
+#Tmp File (custom by AO)
+.RDataTmp

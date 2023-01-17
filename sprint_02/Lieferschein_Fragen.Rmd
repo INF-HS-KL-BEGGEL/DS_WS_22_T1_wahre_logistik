@@ -57,8 +57,8 @@ ger_num(sum_abg)
 ```
 
 ### Welche Gesamtmenge an Artikeln verlässt das Lager pro Tag?
-
 ```{r echo=FALSE}
+
 abg_per_day <- vk %>% group_by(datum) %>% summarize(sum_abg=sum(abgang))
 #abg_per_day <- abg_per_day %>% complete(datum = seq.Date(min(datum), max(datum), by="day")) %>% mutate(sum_abg = ifelse(is.na(sum_abg), 0, sum_abg)) 
 abg_per_day
@@ -67,6 +67,7 @@ ggplot(abg_per_day, aes(x=datum, y=sum_abg)) + geom_line()
 ```
 
 ### Wie viele unterschiedliche Artikel verlassen das Lager pro Tag?
+
 
 ```{r echo=FALSE}
 vk_per_day_per_type <- vk %>% group_by(datum) %>% summarise(different_materials=n_distinct(materialnummer))
@@ -88,7 +89,6 @@ plot_ly(abg_per_day_single_material, x = ~datum, y = ~sum_abg, type = 'scatter',
 
 ## Wenn uns der Umsatz der Artikel interessiert
 ### Welcher Umsatz wird pro Tag generiert?
-
 ```{r echo=FALSE}
 vk_per_day <- vk %>% group_by(datum) %>% summarize(sum_vk_preis_num=sum(vk_preis_num))
 
@@ -114,6 +114,7 @@ ggplot(vk_per_day_single_material, aes(x=datum, y=sum_vk)) + geom_point()
 ### Wie sind die Artikel auf die Kunden verteilt? 
 <!-- TODO: Was/wie visualisieren? => auf ABC bezogen -->
 ```{r message=FALSE, warning=FALSE, echo=FALSE}
+
 vk_per_kunde <- vk %>% group_by(kunde) %>% summarize(num_distinct_materials=n_distinct(materialnummer)) %>% arrange(desc(num_distinct_materials)) %>% mutate(rang=row_number())
 vk_per_kunde
 
@@ -161,7 +162,6 @@ plot_ly(vk_by_mat, x = ~sell_days, y = ~itm_per_day, color = ~vk_year, type = 's
 
 ## Wenn uns die Klassifizierung der Artikel interessiert:
 ### Handelt es sich bei den Artikeln um A, B oder C-Artikel?
-
 
 ```{r include=FALSE}
 get_table_as_tibble <- function(connection, table_name){

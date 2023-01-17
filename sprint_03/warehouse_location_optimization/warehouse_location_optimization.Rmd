@@ -1,0 +1,835 @@
+---
+title: "Standort für das Zentrallager"
+author: "Alexander Opris, Felix Mayer, Lukas Felzmann"
+output:
+  html_notebook:
+    toc: true
+    toc_float: true
+    code_folding: none
+    number_sections: true
+---
+
+
+
+```{r include=FALSE}
+library(DBI)
+library(odbc)
+library(readr)
+library(leaflet)
+library(dplyr)
+library(stringr)
+library(glue)
+library(tictoc)
+readRenviron("../../env_files/.Renviron.postgres")
+```
+
+```{r include=FALSE}
+width_for_leaflet_maps <- "100%"
+height_for_leaflet_maps <- "80vh"
+```
+
+
+```{r include=FALSE}
+get_con_to_routing_db <- function(){
+  con_to_routing_db <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname_routing"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+  
+  return(con_to_routing_db)
+}
+
+get_con_to_normal_db <- function(){
+  con_to_normal_db <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+  
+  return(con_to_normal_db)
+}
+```
+
+```{r include=FALSE}
+# Funktion zum Berechnen der Distanz zwischen zwei Punkten (sphärische Geometrie wird berücksichtigt)
+orthodrome_meters <- function(lat1, long1, lat2, long2) {
+  lat1_rad <- lat1*pi/180
+  long1_rad <- long1*pi/180
+  lat2_rad <- lat2*pi/180
+  long2_rad <- long2*pi/180
+  
+  zeta <- acos(sin(lat1_rad)*sin(lat2_rad)+cos(lat1_rad)*cos(lat2_rad)*cos(long2_rad-long1_rad))
+  distance_earth <- zeta*6370000
+  
+  return(distance_earth)
+}
+```
+
+
+
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+
+
+# Vorbereitungen
+## Raster
+Wir haben ein gleichmäßiges Raster über Deutschland gelegt.
+
+```{r include=FALSE}
+con_to_routing_db <- get_con_to_routing_db()
+query <- "SELECT * FROM tmp_raster_points"
+raster_points <- dbGetQuery(conn = con_to_routing_db, statement = query)
+dbDisconnect(con_to_routing_db)
+```
+
+```{r echo=FALSE}
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>% 
+  addTiles() %>% 
+  addCircleMarkers(lat = raster_points$lat,
+                   lng = raster_points$long,
+                   radius = 6)
+```
+
+Das Raster umfasst `r raster_points %>% nrow()` Punkte, die sowohl in x- als auch y-Richtung jeweils einen Abstand von ca. 86,3 km haben.
+
+
+
+
+```{r include=FALSE}
+tmp3 <-
+  raster_points %>% 
+  filter(long == raster_points[1,]$long) %>% 
+  arrange(lat)
+```
+
+```{r include=FALSE}
+for(i in 1:10){
+  dist = orthodrome_meters(lat1 = tmp3[i,]$lat,
+                            long1 = tmp3[i,]$long,
+                            lat2 = tmp3[i+1,]$lat,
+                            long2 = tmp3[i+1,]$long)
+  
+  print(dist)
+}
+```
+
+```{r include=FALSE}
+tmp <- tmp3
+
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>% 
+  addTiles() %>% 
+  addCircleMarkers(lat = tmp$lat,
+                   lng = tmp$long,
+                   radius = 6)
+```
+
+
+
+
+
+
+
+
+
+
+## Standortkandidaten
+Wir haben die Rasterpunkte auf Straßen in Deutschland abgebildet.
+
+```{r include=FALSE}
+con_to_routing_db <- get_con_to_routing_db()
+query <- "SELECT * FROM potential_warehouse_locations"
+potential_warehouse_locations <- dbGetQuery(conn = con_to_routing_db, statement = query)
+dbDisconnect(con_to_routing_db)
+```
+
+```{r echo=FALSE}
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%  
+  addTiles() %>% 
+  addCircleMarkers(lat = potential_warehouse_locations$proj_lat,
+                   lng = potential_warehouse_locations$proj_long,
+                   radius = 6)
+```
+Beim Mapping sind zum Teil auch verschiedene Rasterpunkte auf denselben Straßenknoten abgebildet worden. Deshalb wurden aus den `r raster_points %>% nrow()` Rasterpunkten `r potential_warehouse_locations %>% nrow()` Standortkandidaten in Deutschland.
+
+
+## Kundenclustering
+Um die Anzahl der zu berechnenden Routen zu reduzieren, sollen die Kunden, die nahe beieinander, zu einem Cluster zusammengefasst werden. Glücklicherweise liegen die Kunden schon "von Haus aus" in  `r customer_cluster_proj %>% distinct(original_lat, original_long) %>% nrow()` Clustern vor. Die Cluster-Koordinaten müssen ebenfalls auf die Straße abgebildet werden.
+
+
+```{r include=FALSE}
+con_to_routing_db <- get_con_to_routing_db()
+query <- "SELECT * FROM customer_cluster_proj"
+customer_cluster_proj <- dbGetQuery(conn = con_to_routing_db, statement = query)
+dbDisconnect(con_to_routing_db)
+```
+
+```{r echo=FALSE}
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = customer_cluster_proj$original_lat,
+                   lng = customer_cluster_proj$original_long,
+                   radius = 6,
+                   color = "blue") %>% 
+  addCircleMarkers(lat = customer_cluster_proj$proj_lat,
+                   lng = customer_cluster_proj$proj_long,
+                   radius = 6,
+                   color = "red")
+```
+(blau = original, rot = abgebildet)  
+Nach der Abbildung auf Knoten unseres Straßennetzwerks liegen `r customer_cluster_proj %>% distinct(proj_vertex_id) %>% nrow()` Koordinaten vor.
+
+
+
+
+
+### Kunden ohne Kundenstammdaten
+Es gibt Kunden in unseren Verkaufsdaten, zu denen wir keine Stammdaten haben. Zu diesen Kunden können wir also keine Route berechnen.
+
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+query <- "
+          SELECT DISTINCT(kunde) AS kndnr
+          FROM verkaeufe
+          
+          EXCEPT
+          
+          SELECT DISTINCT(kndnr_tagless) AS kndnr
+          FROM kundenstammdaten;
+        "
+
+
+kunden_ohne_stammdaten <- dbGetQuery(conn = con_to_normal_db, statement = query)
+dbDisconnect(con_to_normal_db)
+```
+
+
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+query <- "
+          SELECT kunde AS kndnr, SUM(vk_preis_num) AS umsatz_durch_kunde
+        	FROM verkaeufe
+        	GROUP BY kunde;
+        "
+
+
+umsatz_je_kunde <- dbGetQuery(conn = con_to_normal_db, statement = query)
+dbDisconnect(con_to_normal_db)
+```
+
+
+
+```{r include=FALSE}
+kunden_ohne_stammdaten_enhanced <-
+  umsatz_je_kunde %>%
+  mutate(anteil_am_gesamtumsatz = umsatz_durch_kunde/sum(umsatz_durch_kunde)) %>% 
+  arrange(desc(anteil_am_gesamtumsatz)) %>%
+  mutate(kumulierter_anteil = cumsum(anteil_am_gesamtumsatz),
+         rang = row_number()) %>% 
+  inner_join(kunden_ohne_stammdaten, by = "kndnr") %>% 
+  arrange(rang) 
+```
+
+
+```{r echo=FALSE}
+kunden_ohne_stammdaten_enhanced
+```
+
+Die betreffenden Kunden gehören nicht zu unseren umsatzstarken Kunden. Selbst zusammen machen sie gerade einmal `r round(sum(kunden_ohne_stammdaten_enhanced$anteil_am_gesamtumsatz) * 100, digits = 2)` % am Gesamtumsatz aus.
+
+
+
+
+
+
+
+
+
+
+## Routenberechnung
+```{r include=FALSE}
+generate_coord_values_string <- function(lats, longs) {
+  tibble(lats, longs) %>% 
+    mutate(coord_string = glue("({lats}, {longs})")) %>% 
+    summarise(coord_values_string = str_flatten(coord_string, collapse = ", ")) %>% 
+    pull(1) %>% 
+    return()
+}
+```
+
+
+```{r include=FALSE}
+get_bd_dijkstra_many_to_many_query_string <- function(start_coord_longs, start_coord_lats, destination_coord_longs, destination_coord_lats){
+
+  start_coords_values_string <- generate_coord_values_string(lats = start_coord_lats, longs = start_coord_longs)
+  destination_coords_values_string <- generate_coord_values_string(lats = destination_coord_lats, longs = destination_coord_longs)
+  
+  query_string <- glue("
+          -- Hole zu allen start_coords den jeweils nächstgelegenen Node
+           WITH start_vids AS (
+            	SELECT DISTINCT ON (id) id
+              FROM
+              	(SELECT lat, long
+              	FROM (
+              			VALUES {start_coords_values_string}
+              		 ) AS start_coords (lat, long)
+              	) AS start_coords
+              	 
+              	 CROSS JOIN LATERAL
+              	 
+              	 (
+              		SELECT id,
+              				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(start_coords.long, start_coords.lat), 4326) AS dist
+              		FROM de_edges_vertices_pgr AS vertices
+              		ORDER BY dist
+              		LIMIT 1
+              	)  AS vertices
+            ),
+            
+            
+            -- Hole zu allen end_coords den jeweils nächstgelegenen Node
+            end_vids AS (
+            	SELECT DISTINCT ON (id) id
+              FROM
+              	(SELECT lat, long
+              	FROM (
+              			VALUES {destination_coords_values_string}
+              		 ) AS end_coords (lat, long)
+              	) AS end_coords
+              	 
+              	 CROSS JOIN LATERAL
+              	 
+              	 (
+              		SELECT id,
+              				vertices.the_geom <-> ST_SetSRID(ST_MakePoint(end_coords.long, end_coords.lat), 4326) AS dist
+              		FROM de_edges_vertices_pgr AS vertices
+              		ORDER BY dist
+              		LIMIT 1
+              	)  AS vertices
+            )
+            
+            -- Berechne die Routen von allen Start- zu allen End-Nodes
+            SELECT seq,
+                  path_seq,
+                  start_vid,
+                  end_vid,
+                  node,
+                  edge,
+                  ST_X(the_geom_node) as long,
+                  ST_Y(the_geom_node) as lat,
+                  ST_LengthSpheroid(the_geom_edge, 'SPHEROID[\"GRS_1980\",6378137,298.257222101]') as length_of_edge
+            FROM pgr_bdDijkstra(
+            	  'SELECT id, source, target, cost, reverse_cost
+            	  FROM de_edges',
+            	  ARRAY(SELECT id from start_vids), 
+            	  ARRAY(SELECT id from end_vids)
+            ) as routes
+            
+            INNER JOIN
+            
+    	      (SELECT id, the_geom as the_geom_node
+    	      FROM de_edges_vertices_pgr) as nodes
+    	      ON routes.node = nodes.id
+    	      
+    	      INNER JOIN
+            (SELECT id, the_geom as the_geom_edge
+            FROM de_edges) as edges
+            ON routes.edge = edges.id;
+            ")
+  
+  
+  return(query_string)
+}
+```
+
+
+
+
+```{r include=FALSE}
+# # Beispielhaft mal eine Route ausrechnen
+# start_coord_lats <- potential_warehouse_locations[12, "proj_lat"]
+# start_coord_longs <- potential_warehouse_locations[12, "proj_long"]
+# destination_coord_lats <- customer_cluster_proj$original_lat
+# destination_coord_longs <- customer_cluster_proj$original_long
+# 
+# 
+# # Routen berechnen
+# query_string <- get_bd_dijkstra_many_to_many_query_string(start_coord_longs = start_coord_longs,
+#                                                           start_coord_lats = start_coord_lats,
+#                                                           destination_coord_longs = destination_coord_longs,
+#                                                           destination_coord_lats = destination_coord_lats)
+# 
+# con_to_routing_db <- get_con_to_routing_db()
+# example_routes <- dbGetQuery(conn = con_to_routing_db, statement = query_string)
+# dbDisconnect(con_to_routing_db)
+```
+
+
+```{r include=FALSE}
+# dbAppendTable(conn = con_to_routing_db, name = "example_routes", value = example_routes)
+```
+
+
+```{r include=FALSE}
+con_to_routing_db = get_con_to_routing_db()
+query <- "
+          SELECT *
+          FROM example_routes
+          where start_vid = 924791
+          ;
+        "
+example_routes = dbGetQuery(conn = con_to_routing_db, statement = query)
+dbDisconnect(con_to_routing_db)
+```
+
+
+```{r include=FALSE}
+tmp <- 
+  example_routes %>% 
+  filter(path_seq == 1)
+
+start_coord_lats = tmp$lat
+start_coord_longs = tmp$long
+
+rm(tmp)
+```
+
+
+
+```{r echo=FALSE}
+end_vids <- 
+  example_routes %>% 
+    distinct(end_vid) %>% 
+    pull()
+
+colors <- c("red", "green", "blue", "orange", "purple", "cyan", "yellow", "brown", "black", "lila")
+
+map <- 
+  leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+  addTiles()
+
+for(i in 1:length(end_vids)){
+  route <- 
+    example_routes %>% 
+    filter(end_vid == end_vids[i]) %>% 
+    select(lat, long)
+  
+  color <- colors[i %% (length(colors)+1)]
+  map <- 
+    map %>% 
+    addPolylines(lat = route$lat,
+                 lng = route$long,
+                 weight = 5,
+                 opacity = 0.5,
+                 color = color)
+}
+
+map <- 
+  map %>% 
+  addCircleMarkers(lat = start_coord_lats,
+                   lng = start_coord_longs,
+                   radius = 8,
+                   color = "red",
+                   opacity = 1,
+                   fillColor = "white",
+                   fillOpacity = 1)
+
+map
+```
+
+
+
+
+## Nicht routbare Kunden
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+query_string <- "
+                SELECT DISTINCT(end_vid) AS proj_vertex_id
+                FROM routing_agg_results
+                ;
+                "
+routable_customer_cluster_vertex_ids <- dbGetQuery(conn = con_to_normal_db, statement = query_string)
+```
+
+
+```{r include=FALSE}
+non_routable_customer_cluster <-
+  customer_cluster_proj %>% 
+  filter(!proj_vertex_id %in% as.integer(routable_customer_cluster_vertex_ids$proj_vertex_id))
+```
+
+
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+query <- "
+          SELECT kndnr_tagless as kndnr, laengengrad as long, breitengrad as lat
+        	FROM kundenstammdaten
+        	;
+        "
+
+
+kundenstammdaten <- dbGetQuery(conn = con_to_normal_db, statement = query)
+dbDisconnect(con_to_normal_db)
+```
+
+
+```{r include=FALSE}
+non_routable_customers <-
+  non_routable_customer_cluster %>% 
+  inner_join(kundenstammdaten, by = c("original_lat" = "lat", "original_long" = "long"))
+```
+
+
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+query <- "
+          SELECT kunde AS kndnr, SUM(vk_preis_num) AS umsatz_durch_kunde
+        	FROM verkaeufe
+        	GROUP BY kunde;
+        "
+
+
+umsatz_je_kunde <- dbGetQuery(conn = con_to_normal_db, statement = query)
+dbDisconnect(con_to_normal_db)
+
+umsatz_je_kunde_enhanced <- 
+  umsatz_je_kunde %>% 
+  mutate(anteil_am_gesamtumsatz = umsatz_durch_kunde/sum(umsatz_durch_kunde)) %>% 
+  arrange(desc(anteil_am_gesamtumsatz)) %>% 
+  mutate(anteil_kumuliert = cumsum(anteil_am_gesamtumsatz),
+         rang = row_number())
+```
+
+
+```{r include=FALSE}
+non_routable_customers_enhanced <- 
+  non_routable_customers %>% 
+  select(-proj_vertex_id, -proj_lat, -proj_long, -proj_the_geom, -original_lat, -original_long) %>% 
+  inner_join(umsatz_je_kunde_enhanced, by = "kndnr") %>% 
+  arrange(rang)
+```
+
+
+```{r}
+non_routable_customers_enhanced
+```
+
+Die nicht routbaren Kunden sind hinsichtlich des Umsatzes nicht zu vernachlässigen. Zusammen machen sie `r round(sum(non_routable_customers_enhanced$anteil_am_gesamtumsatz) * 100, digits = 2)` % vom Gesamtumsatz aus.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Auswertung der Routing-Ergebnisse
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+
+query <- "
+          SELECT 
+          	umsatz_pro_kunde.kndnr,
+          	summe_umsatz,
+          	anzahl_lieferungen,
+          	laengengrad AS long,
+          	breitengrad AS lat
+          FROM
+          
+          (
+          	SELECT kunde AS kndnr, SUM(vk_preis_num) AS summe_umsatz
+          	FROM verkaeufe
+          	GROUP BY kunde
+          ) AS umsatz_pro_kunde
+          
+          INNER JOIN
+          
+          (
+          	SELECT kunde AS kndnr, COUNT(DISTINCT(datum, lieferschein)) AS anzahl_lieferungen
+          	FROM verkaeufe
+          	GROUP BY kunde
+          ) AS bestellungen_pro_kunde
+          USING (kndnr) 
+          
+          INNER JOIN
+          
+          kundenstammdaten
+          ON bestellungen_pro_kunde.kndnr = kundenstammdaten.kndnr_tagless;
+        "
+
+
+customer_data_aggregated <- dbGetQuery(conn = con_to_normal_db, statement = query)
+dbDisconnect(con_to_normal_db)
+```
+
+
+
+```{r include=FALSE}
+customer_cluster_data_enhanced <- 
+  customer_cluster_proj %>% 
+  inner_join(customer_data_aggregated, by = c("original_lat" = "lat", "original_long" = "long")) %>% 
+  group_by(proj_vertex_id) %>% 
+  summarise(summe_umsatz = sum(summe_umsatz),
+            anzahl_lieferungen = sum(anzahl_lieferungen),
+            anzahl_kunden_im_cluster = n())
+```
+
+
+```{r include=FALSE}
+con_to_normal_db <- get_con_to_normal_db()
+query <- "
+          SELECT *
+          FROM routing_agg_results
+          ;
+        "
+
+
+routing_agg_results <- dbGetQuery(conn = con_to_normal_db, statement = query)
+dbDisconnect(con_to_normal_db)
+```
+
+
+```{r include=FALSE}
+routing_agg_results_enhanced <-
+  routing_agg_results %>% 
+  inner_join(customer_cluster_data_enhanced, by = c("end_vid" = "proj_vertex_id"))
+```
+
+
+
+
+
+
+
+
+
+
+## Kriterium: Durchschnittliche Distanz zum Kunden
+Welche Lager weisen im Durchschnitt eine geringe Distanz zum Kunden auf?
+```{r include=FALSE}
+# Die Distanz zu jedem Cluster muss noch mit der Anzahl der Kunden im jeweiligen Cluster gewichtet werden.
+# Achtung: Für den Durchschnitt nicht einfach avg() verwenden. Das würde in diesem Fall durch die Anzahl der Cluster und nicht (wie gewollt) durch die Anzahl der Kunden teilen.
+auswertung_nach_avg_distanz_zum_kunden <-
+  routing_agg_results_enhanced %>% 
+  mutate(gew_km_start_end = km_start_end*anzahl_kunden_im_cluster,
+         gew_km_end_start = km_end_start*anzahl_kunden_im_cluster) %>% 
+  group_by(start_vid,
+           proj_start_lat,
+           proj_start_long) %>% 
+  summarise(km_start_end_avg = sum(gew_km_start_end)/sum(anzahl_kunden_im_cluster),
+            km_end_start_avg = sum(gew_km_end_start)/sum(anzahl_kunden_im_cluster))
+```
+
+
+```{r include=FALSE}
+auswertung_nach_avg_distanz_zum_kunden <-
+  auswertung_nach_avg_distanz_zum_kunden %>% 
+  ungroup() %>%
+  arrange(km_start_end_avg) %>%
+  mutate(rang = row_number())
+```
+
+
+
+```{r echo=FALSE}
+auswertung_nach_avg_distanz_zum_kunden
+```
+
+
+
+### Top-5 und Bottom-5 hinsichtlich durchschnittlicher Distanz zum Kunden
+```{r echo=FALSE}
+data_selection_1 = auswertung_nach_avg_distanz_zum_kunden[1:5, ]
+data_selection_2 = auswertung_nach_avg_distanz_zum_kunden[75:79, ]
+
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = data_selection_1$proj_start_lat,
+                   lng = data_selection_1$proj_start_long,
+                   radius = 6,
+                   label = data_selection_1$rang
+                   ) %>% 
+  addCircleMarkers(lat = data_selection_2$proj_start_lat,
+                   lng = data_selection_2$proj_start_long,
+                   radius = 6,
+                   color = "red",
+                   label = data_selection_2$rang
+                   ) 
+```
+
+
+
+
+### Die Kundencluster mit den meisten Kunden
+```{r include=FALSE}
+tmp <- 
+  customer_cluster_data_enhanced %>%
+  inner_join(customer_cluster_proj, by = "proj_vertex_id") %>% 
+  arrange(desc(anzahl_kunden_im_cluster))
+```
+
+
+
+```{r echo=FALSE}
+row_selection <- 1:15
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = tmp[row_selection,]$proj_lat,
+                   lng = tmp[row_selection,]$proj_long,
+                   label = tmp[row_selection,]$anzahl_kunden_im_cluster,
+                   radius = 6
+                   )
+```
+
+
+```{r include=FALSE}
+tmp
+```
+
+
+
+## Kriterium: Durchschnittliche Distanz zum Kundencluster
+Welche Lager weisen im Durchschnitt eine geringe Distanz zu Kunden-**Clustern** auf?
+
+```{r include=FALSE}
+auswertung_nach_avg_distanz_zu_cluster <-
+  routing_agg_results_enhanced %>% 
+  group_by(start_vid,
+           proj_start_lat,
+           proj_start_long) %>% 
+  summarise(km_start_end_avg = mean(km_start_end),
+            km_end_start_avg = mean(km_end_start))
+```
+
+
+```{r include=FALSE}
+# Noch aufsteigend sortieren
+auswertung_nach_avg_distanz_zu_cluster <-
+  auswertung_nach_avg_distanz_zu_cluster %>% 
+  ungroup() %>%
+  arrange(km_start_end_avg) %>%
+  mutate(rang = row_number())
+```
+
+
+
+
+
+```{r echo=FALSE}
+auswertung_nach_avg_distanz_zu_cluster
+```
+
+
+
+```{r echo=FALSE}
+data_selection_1 = auswertung_nach_avg_distanz_zu_cluster[1:5, ]
+data_selection_2 = auswertung_nach_avg_distanz_zu_cluster[75:79, ]
+
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = data_selection_1$proj_start_lat,
+                   lng = data_selection_1$proj_start_long,
+                   radius = 6,
+                   label = data_selection_1$rang
+                   ) %>% 
+  addCircleMarkers(lat = data_selection_2$proj_start_lat,
+                   lng = data_selection_2$proj_start_long,
+                   radius = 6,
+                   color = "red",
+                   label = data_selection_2$rang
+                   ) 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Kriterium: Durchschnittliche Strecke pro Lieferung
+Bei welchen Lagern erreicht man eine geringe durchschnittliche Distanz pro Lieferung?
+
+
+```{r include=FALSE}
+auswertung_nach_anzahl_lieferungen <-
+  routing_agg_results_enhanced %>% 
+  mutate(gew_km_start_end = km_start_end * anzahl_lieferungen,
+         gew_km_end_start = km_end_start * anzahl_lieferungen) %>% 
+  group_by(start_vid,
+           proj_start_lat,
+           proj_start_long) %>% 
+  summarise(avg_km_start_end_pro_lieferung = sum(gew_km_start_end)/sum(anzahl_lieferungen),
+            avg_km_end_start_pro_lieferung = sum(gew_km_end_start)/sum(anzahl_lieferungen))
+```
+
+
+```{r include=FALSE}
+# Noch aufsteigend sortieren
+auswertung_nach_anzahl_lieferungen <- 
+  auswertung_nach_anzahl_lieferungen %>% 
+  ungroup() %>% 
+  arrange(avg_km_start_end_pro_lieferung) %>% 
+  mutate(rang = row_number())
+```
+
+
+
+```{r echo=FALSE}
+auswertung_nach_anzahl_lieferungen
+```
+
+
+
+```{r echo=FALSE}
+data_selection_1 = auswertung_nach_anzahl_lieferungen[1:5, ]
+data_selection_2 = auswertung_nach_anzahl_lieferungen[75:79, ]
+
+leaflet(width = width_for_leaflet_maps, height = height_for_leaflet_maps) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = data_selection_1$proj_start_lat,
+                   lng = data_selection_1$proj_start_long,
+                   radius = 6,
+                   label = data_selection_1$rang
+                   ) %>% 
+  addCircleMarkers(lat = data_selection_2$proj_start_lat,
+                   lng = data_selection_2$proj_start_long,
+                   radius = 6,
+                   color = "red",
+                   label = data_selection_2$rang
+                   ) 
+```
+
+
+
+
+
+
+## Ausblick
+- Umsatz
+- Gewicht
+- Volumen
+
+
+
+
+
+
+

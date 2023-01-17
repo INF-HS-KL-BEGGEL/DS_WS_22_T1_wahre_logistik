@@ -1,0 +1,147 @@
+---
+title: "Warenkorb-Analyse"
+output: html_notebook
+---
+
+# Disclaimer: Urheberrecht
+Die in den Analysen verwendeten Daten wurden uns von Prof. Dr.-Ing. Martin Wölker ([Hochschul-Profilseite](https://www.hs-kl.de/hochschule/profil/personenverzeichnis/detailanzeige-personen/person/martin-woelker)) zur Verfügung gestellt. Die Daten sind auf Herrn Wölkers Blog ([Martins wahre Logistik](https://martins-wahre-logistik.blogspot.com/2022/10/logistics-case-studies-der-lieferschein.html)) auffindbar. Zum gegenwärtigen Zeitpunkt (Stand: 07.12.2022) sind die Daten wie folgt lizenziert: CC BY-NC-SA
+
+## Produkt Häufigkeit
+
+```{r include=FALSE}
+library(DBI)
+library(dplyr) #Warning! Included this library together with plyr results in the situation that summarize() is double defined. Need to be called by dplyr::summarize
+library(odbc)
+library(factoextra)
+library(RColorBrewer)
+
+library(arules) #Provides the infrastructure for representing, manipulating and analyzing transaction data and patterns (frequent itemsets and association rules).
+
+library(arulesViz) #Extends package 'arules' with various visualization techniques for association rules and item-sets. The package also includes several interactive visualizations for rule exploration.
+
+library(plyr) #Tools for Splitting, Applying and Combining Data
+readRenviron("../env_files/.Renviron.postgres")
+```
+
+```{r include=FALSE}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = Sys.getenv("driver"),#"PostgreSQL Unicode",
+                      Server   = Sys.getenv("host"),
+                      Database = Sys.getenv("dbname"),
+                      UID      = Sys.getenv("user"),
+                      PWD      = Sys.getenv("password"),
+                      Port     = Sys.getenv("port"))
+```
+
+
+```{r include=FALSE}
+#delivery bill wth every material
+lieferscheinProKunde <- dbGetQuery(conn=con, statement = "Select lieferschein, materialnummer From verkaeufe Order By lieferschein")
+```
+
+```{r include=FALSE}
+#cast into a glimpse object
+gTemp <- glimpse(lieferscheinProKunde)
+
+#groub by delivery bill and merge all materialnumbers in one list
+transactionData <- ddply(gTemp,c("lieferschein"),
+                       function(dataFrame)paste(dataFrame$materialnummer,
+                       collapse = ","))
+
+#rename column and remove unused columns
+names(transactionData)[names(transactionData) == "V1"] <- "items"
+transactionData <- transactionData %>% select(items) #called basket layout
+
+gTemp
+transactionData
+```
+
+```{r include=FALSE}
+#export the data as CSV file
+write.csv(transactionData,"./market_basket_transactions.csv", quote = FALSE, row.names = FALSE)
+
+#import the data using a Transaction object builder
+tr <- read.transactions("./market_basket_transactions.csv", format = 'basket', sep=',')
+summary(tr)
+```
+
+Das folgende Diagramm zeigt die am häugisten verkauften Materialien:
+Es ist nahe liegend das manche Produkte immer zusammen mit anderen erworben werden, insbesondere bei den am häufigsten verkauften Produkten. 
+Um zu analysieren wie hoch die Wahrscheinlichkeit eines Produkts B ist gekauft zu werden, wenn bereits ein Produkt A erworben wurde, wird eine Warenkorb Analyse durchgeführt.
+Hierzu wird die Apriori Funktion genutzt.
+Mehr unter:
+https://www.datacamp.com/tutorial/market-basket-analysis-r
+
+```{r echo=FALSE}
+# Create an item frequency plot for the top 30 items
+itemFrequencyPlot(tr,topN=30,type="absolute",col=brewer.pal(8,'Pastel2'), main="Absolute Item Frequency Plot for most frequent 30 items")
+```
+## Apriori Funktion
+
+Als nächstes betrachten wir uns die konkreten Korrelationen bzw. die Regeln, die uns die Apriorie Funktion berechnet hat:
+
+```{r include=FALSE}
+# search for rules within the items using Apriori algorithm
+rules <- apriori(tr, parameter = list(supp=0.001, conf=0.5,maxlen=10))
+rulesDF <- as(rules,"data.frame") %>% arrange(desc(confidence))
+summary(rules)
+rulesDF
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#Plot rules
+plot(rules)
+```
+Dabei gilt:
+Confidence: Die Wahrscheinlichkaiet, dass wenn A gekauft wurde, auch B gekauft wird.  
+Support: Die Häufigkeit wie oft diese Korrelation im gesamten Datensatz zu finden ist.
+Lift: Beschreibt die Korrelation zwischen A und B.
+  - Bei einem Lift von 1 gibt es keine Abhängigkeit zwischen beiden und es kann keine Vorhersage gemacht werden  
+  - Bei einem Lift > 1 sind beide von einander abhängig. Desto höher der Lift, umso stärker die Abhängigkeit  
+
+```{r include=FALSE}
+#defining some functions for modularisation
+getRulesFor <- function(material) {
+  temp <- apriori(tr, parameter = list(supp=0.001, conf=0.5),appearance = list(default="lhs",rhs=material))
+  rulesSpecificDF <- as(temp,"data.frame") %>% arrange(desc(confidence))
+  rulesSpecificDF$ruleNumber <- seq.int(nrow(rulesSpecificDF))
+  rulesSpecificDF
+}
+
+plotMaterialRules <- function(material,amountOfRules) {
+  rulesSpecific <- getRulesFor(material)
+  #Bar diagramm for total and rel. retail value per cluster
+  plottingData <- rulesSpecific %>% select(confidence,support, rules)%>% head(amountOfRules)
+  plottingData <- plottingData %>% arrange(confidence)
+  plottingData$ruleNumber <- seq.int(nrow(plottingData))
+  ggplot(plottingData, aes(x=ruleNumber, y=confidence,fill=confidence)) +
+    geom_col(fill="steelblue",color="white")+
+    scale_y_continuous(breaks = seq(from=0, to=1, by=0.1)) +
+    scale_x_continuous(breaks = seq(from=0, to=amountOfRules, by=1)) +
+    geom_text(aes(label=paste(rules,"\t",as.character(round(confidence*100,digits=2)),"%"), hjust=+1))+
+    coord_flip()+
+  theme_minimal()
+}
+```
+
+```{r include=FALSE}
+# Regeln für das meist referenzierte Produkt '276012000':
+rulesSpecific <- getRulesFor("276012000")
+rulesSpecific
+```
+Betrachten wir die Regeln für das Produkt mit den meisten Regeln '276012000':
+
+```{r echo=FALSE}
+ggplot(rulesSpecific %>% select(rules,confidence,support, ruleNumber), aes(x=ruleNumber, y=confidence,fill=confidence)) +
+  geom_bar(stat="identity", fill="steelblue",color="white")+
+  theme_minimal()
+```
+Ebenso lassen sich die jeweiligen Regeln in Detail betrachten:
+
+```{r echo=FALSE}
+plotMaterialRules("276012000",10)
+```
+
+```{r echo=FALSE}
+dbDisconnect(con)
+```

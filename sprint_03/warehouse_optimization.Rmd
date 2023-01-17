@@ -124,6 +124,7 @@ ls_class_comb <- vk_zg_class %>% group_by(lieferschein) %>% arrange(klasse_zugri
 ls_class_comb
 ```
 
+
 ```{r include=FALSE}
 # test <- vk_zg_class %>% group_by(lieferschein) %>% arrange(materialnummer) %>% dplyr::summarize(mat_comb=paste0(unique(materialnummer), collapse = ";"))
  
@@ -131,6 +132,8 @@ ls_class_comb
 ```
 
 ```{r, echo=FALSE}
+class_ls_count <- ls_class_comb %>% dplyr::group_by(komb_klasse_zugriffe) %>% dplyr::summarize(anzahl_ls_mit_komb=n())
+
 summe_ls <- sum(class_ls_count$anzahl_ls_mit_komb)
 
 print(paste("Summe Lieferscheine:", summe_ls))
@@ -204,11 +207,6 @@ print(paste("ABC-Zonung/Einzelne Zugriffe =", sum_zugriffe_zoning/sum_zugriffe))
 print(paste("Bei ABC-Zonung nur", round((sum_zugriffe_zoning/sum_zugriffe)*100), "Prozent der Zugriffe nötig")) 
 print(paste("Effizenzsteigerung von", round((1-sum_zugriffe_zoning/sum_zugriffe)*100), "Prozent")) 
 ```
-
-
-
-
-
 
 # Verfeinerung mit Apriori
 ## Regeln für A
@@ -408,4 +406,3 @@ plot(subRules, method = "graph",  engine = "htmlwidget")
 ```{r include=FALSE}
 dbDisconnect(con)
 ```
-
