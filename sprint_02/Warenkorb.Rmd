@@ -24,15 +24,6 @@ readRenviron("../env_files/.Renviron.postgres")
 ```
 
 ```{r include=FALSE}
-con <- dbConnect(drv=RPostgres::Postgres(),
-                 dbname=Sys.getenv("dbname"),
-                 host=Sys.getenv("host"),
-                 port=Sys.getenv("port"),
-                 password=Sys.getenv("password"),
-                 user=Sys.getenv("user"))
-```
-
-```{r include=FALSE}
 con <- DBI::dbConnect(odbc::odbc(),
                       Driver   = Sys.getenv("driver"),#"PostgreSQL Unicode",
                       Server   = Sys.getenv("host"),
